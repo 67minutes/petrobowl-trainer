@@ -9,18 +9,31 @@ type DashboardResponse = {
   error?: string;
 };
 
+const CACHE_TTL_MS = 60_000;
+const dashboardCache = new Map<string, { data: DashboardData; expiresAt: number }>();
+
 export function useDashboardData() {
   const { session } = useAuth();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = session?.access_token ? dashboardCache.get(session.access_token) : null;
+  const initialData = cached && cached.expiresAt > Date.now() ? cached.data : null;
+  const [data, setData] = useState<DashboardData | null>(initialData);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
+    const token = session?.access_token;
 
     async function loadDashboard() {
-      if (!session?.access_token) {
+      if (!token) {
         setData(null);
+        setLoading(false);
+        return;
+      }
+
+      const cachedData = dashboardCache.get(token);
+      if (cachedData && cachedData.expiresAt > Date.now()) {
+        setData(cachedData.data);
         setLoading(false);
         return;
       }
@@ -31,7 +44,7 @@ export function useDashboardData() {
       try {
         const response = await fetch("/api/dashboard", {
           headers: {
-            Authorization: `Bearer ${session.access_token}`
+            Authorization: `Bearer ${token}`
           }
         });
         const payload = (await response.json()) as DashboardResponse;
@@ -41,6 +54,10 @@ export function useDashboardData() {
         }
 
         if (mounted) {
+          dashboardCache.set(token, {
+            data: payload.data,
+            expiresAt: Date.now() + CACHE_TTL_MS
+          });
           setData(payload.data);
         }
       } catch (fetchError) {

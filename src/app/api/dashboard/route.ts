@@ -5,6 +5,9 @@ import type { DashboardData } from "@/types/dashboard";
 
 export const runtime = "nodejs";
 
+const QUESTION_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+const questionCountCache = new Map<string, { counts: Map<string, number>; expiresAt: number }>();
+
 function startOfTodayIso() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -50,6 +53,49 @@ async function fetchAllPages<T>(
       return rows;
     }
   }
+}
+
+async function countRows(
+  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  label: string
+) {
+  const { count, error } = await query;
+
+  if (error || count === null) {
+    throw new Error(`${label}: ${error?.message ?? "missing count"}`);
+  }
+
+  return count;
+}
+
+async function countQuestionsByTopic(
+  supabase: ReturnType<typeof createServiceSupabaseClient>,
+  topicIds: string[]
+) {
+  const cacheKey = [...topicIds].sort().join(",");
+  const cached = questionCountCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.counts;
+  }
+
+  const counts = await Promise.all(
+    topicIds.map(async (topicId) => {
+      const count = await countRows(
+        supabase.from("questions").select("id", { count: "exact", head: true }).eq("topic_id", topicId),
+        "Could not count questions"
+      );
+      return [topicId, count] as const;
+    })
+  );
+
+  const countMap = new Map(counts);
+  questionCountCache.set(cacheKey, {
+    counts: countMap,
+    expiresAt: Date.now() + QUESTION_COUNT_CACHE_TTL_MS
+  });
+
+  return countMap;
 }
 
 export async function GET(request: Request) {
@@ -128,41 +174,32 @@ export async function GET(request: Request) {
     topicCountByPlayer.set(assignment.player_id, (topicCountByPlayer.get(assignment.player_id) ?? 0) + 1);
   }
 
-  let questions: { id: string; topic_id: string; answer: string }[] = [];
+  let questionCountByTopic = new Map<string, number>();
+  const assignedQuestionsByPlayer = new Map<string, number>();
+  let unownedQuestions = 0;
 
   try {
-    questions = allTopicIds.length
-      ? await fetchAllPages(
-          (from, to) =>
-            supabase
-              .from("questions")
-              .select("id, topic_id, answer")
-              .in("topic_id", allTopicIds)
-              .range(from, to),
-          "Could not load questions"
-        )
-      : [];
+    questionCountByTopic = await countQuestionsByTopic(supabase, allTopicIds);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not load questions." },
+      { error: error instanceof Error ? error.message : "Could not count questions." },
       { status: 500 }
     );
   }
 
-  const assignedQuestionsByPlayer = new Map<string, number>();
-  const assignedQuestionOwner = new Map<string, string>();
-  let unownedQuestions = 0;
-
-  for (const question of questions) {
-    const ownerId = playerIdByTopic.get(question.topic_id);
+  for (const topicId of allTopicIds) {
+    const questionCount = questionCountByTopic.get(topicId) ?? 0;
+    const ownerId = playerIdByTopic.get(topicId);
     if (ownerId) {
-      assignedQuestionOwner.set(question.id, ownerId);
-      assignedQuestionsByPlayer.set(ownerId, (assignedQuestionsByPlayer.get(ownerId) ?? 0) + 1);
-    } else if (!assignedTopicIds.has(question.topic_id)) {
-      unownedQuestions += 1;
+      assignedQuestionsByPlayer.set(ownerId, (assignedQuestionsByPlayer.get(ownerId) ?? 0) + questionCount);
+    } else if (!assignedTopicIds.has(topicId)) {
+      unownedQuestions += questionCount;
     }
   }
 
+  const today = dateOnly(new Date());
+  const masteredByPlayer = new Map<string, number>();
+  const dueByPlayer = new Map<string, number>();
   let progressRows: {
     player_id: string;
     question_id: string;
@@ -190,13 +227,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const today = dateOnly(new Date());
-  const masteredByPlayer = new Map<string, number>();
-  const dueByPlayer = new Map<string, number>();
-  const activeProgressByQuestion = new Map<
-    string,
-    { ease_factor: number; interval_days: number; next_review: string }
-  >();
+  const activeAssignedTopicIds = (assignments ?? [])
+    .filter((assignment) => assignment.player_id === activePlayer.id)
+    .map((assignment) => assignment.topic_id);
 
   for (const row of progressRows) {
     if (row.interval_days >= 21) {
@@ -204,13 +237,6 @@ export async function GET(request: Request) {
     }
     if (row.next_review <= today) {
       dueByPlayer.set(row.player_id, (dueByPlayer.get(row.player_id) ?? 0) + 1);
-    }
-    if (row.player_id === activePlayer.id) {
-      activeProgressByQuestion.set(row.question_id, {
-        ease_factor: row.ease_factor,
-        interval_days: row.interval_days,
-        next_review: row.next_review
-      });
     }
   }
 
@@ -256,49 +282,78 @@ export async function GET(request: Request) {
     }
   }
 
-  const activeAssignedQuestionIds = new Set(
-    [...assignedQuestionOwner.entries()]
-      .filter(([, ownerId]) => ownerId === activePlayer.id)
-      .map(([questionId]) => questionId)
-  );
+  const weakCandidates = progressRows
+    .filter(
+      (row) =>
+        row.player_id === activePlayer.id &&
+        (row.ease_factor < 2 || (againCountByQuestion.get(row.question_id) ?? 0) > 0)
+    )
+    .map((row) => ({
+      questionId: row.question_id,
+      ease_factor: row.ease_factor,
+      interval_days: row.interval_days,
+      next_review: row.next_review
+    }));
 
-  const weakQuestionIds = [...activeProgressByQuestion.entries()]
-    .filter(([questionId, row]) => activeAssignedQuestionIds.has(questionId) && (row.ease_factor < 2 || (againCountByQuestion.get(questionId) ?? 0) > 0))
-    .sort((left, right) => left[1].ease_factor - right[1].ease_factor)
-    .slice(0, 3)
-    .map(([questionId]) => questionId);
+  const weakRows = weakCandidates
+    .sort((left, right) => {
+      const easeDifference = left.ease_factor - right.ease_factor;
+      if (easeDifference !== 0) {
+        return easeDifference;
+      }
+      return (againCountByQuestion.get(right.questionId) ?? 0) - (againCountByQuestion.get(left.questionId) ?? 0);
+    })
+    .slice(0, 10);
 
-  const topicIdsForWeakQuestions = new Set(
-    questions.filter((question) => weakQuestionIds.includes(question.id)).map((question) => question.topic_id)
-  );
+  let weakQuestions: { id: string; topic_id: string; answer: string }[] = [];
+
+  if (weakRows.length && activeAssignedTopicIds.length) {
+    const { data: questionRows, error: questionRowsError } = await supabase
+      .from("questions")
+      .select("id, topic_id, answer")
+      .in(
+        "id",
+        weakRows.map((row) => row.questionId)
+      )
+      .in("topic_id", activeAssignedTopicIds);
+
+    if (questionRowsError) {
+      return NextResponse.json({ error: questionRowsError.message }, { status: 500 });
+    }
+
+    weakQuestions = questionRows ?? [];
+  }
+
+  const weakQuestionById = new Map(weakQuestions.map((question) => [question.id, question]));
+  const selectedWeakRows = weakRows.filter((row) => weakQuestionById.has(row.questionId)).slice(0, 3);
+  const topicIdsForWeakQuestions = new Set(weakQuestions.map((question) => question.topic_id));
 
   const { data: weakTopics } = topicIdsForWeakQuestions.size
     ? await supabase.from("topics").select("id, name").in("id", [...topicIdsForWeakQuestions])
     : { data: [] };
 
   const topicNameById = new Map((weakTopics ?? []).map((topic) => [topic.id, topic.name]));
-  const questionById = new Map(questions.map((question) => [question.id, question]));
+  const totalQuestions = [...questionCountByTopic.values()].reduce((sum, count) => sum + count, 0);
 
   const data: DashboardData = {
     activePlayerId: activePlayer.id,
     teamName: team?.name ?? TEAM_NAME,
     dailyNewCardLimit: Number(process.env.PETROBOWL_DAILY_NEW_CARD_LIMIT ?? DAILY_NEW_CARD_LIMIT),
-    totalQuestions: questions.length,
+    totalQuestions,
     unownedQuestions,
     activity: activityDays.map(({ day, count }) => ({ day, count })),
-    weakSpots: weakQuestionIds.flatMap((questionId) => {
-      const question = questionById.get(questionId);
-      const progress = activeProgressByQuestion.get(questionId);
-      if (!question || !progress) {
+    weakSpots: selectedWeakRows.flatMap((row) => {
+      const question = weakQuestionById.get(row.questionId);
+      if (!question) {
         return [];
       }
 
       return {
-        questionId,
+        questionId: row.questionId,
         term: question.answer,
         topic: topicNameById.get(question.topic_id) ?? "Topic",
-        ease: progress.ease_factor,
-        agains: againCountByQuestion.get(questionId) ?? 0
+        ease: row.ease_factor,
+        agains: againCountByQuestion.get(row.questionId) ?? 0
       };
     }),
     players: players.map((player) => ({
