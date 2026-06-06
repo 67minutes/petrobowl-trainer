@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, LockKeyhole, Play } from "lucide-react";
+import { Play } from "lucide-react";
+import { AuthGreeting } from "@/components/auth/auth-greeting";
+import { AuthPanel } from "@/components/auth/auth-panel";
 import { AppShell } from "@/components/app-shell";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatRow } from "@/components/stat-row";
@@ -13,31 +15,8 @@ export default function Home() {
     <AppShell
       active="/"
       eyebrow="Hello"
-      title="Hi, Maulidan."
-      aside={
-        <div className="surface rounded p-5">
-          <div className="flex items-center gap-3">
-            <LockKeyhole aria-hidden className="h-5 w-5 text-petrol-600" />
-            <div>
-              <h2 className="text-sm font-semibold text-ink-900">Welcome back.</h2>
-            </div>
-          </div>
-          <div className="mt-5 space-y-3">
-            <input
-              aria-label="Email"
-              placeholder="email@speitb.org"
-              className="focus-ring w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
-            >
-              Continue
-              <ArrowRight aria-hidden className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      }
+      title={<AuthGreeting />}
+      aside={<AuthPanel />}
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
         <section className="surface rounded p-5">

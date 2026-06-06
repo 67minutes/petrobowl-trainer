@@ -8,6 +8,7 @@ import {
   Settings2
 } from "lucide-react";
 import { clsx } from "clsx";
+import { SessionMenu } from "@/components/auth/session-menu";
 
 const navItems = [
   { href: "/", label: "Home", icon: Gauge },
@@ -21,7 +22,7 @@ const navItems = [
 type AppShellProps = {
   active: string;
   eyebrow?: string;
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   children: React.ReactNode;
   aside?: React.ReactNode;
@@ -64,6 +65,7 @@ export function AppShell({ active, eyebrow, title, subtitle, children, aside }: 
               );
             })}
           </nav>
+          <SessionMenu />
         </div>
       </header>
 

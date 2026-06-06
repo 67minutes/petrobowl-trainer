@@ -1,3 +1,5 @@
+import { AuthGreeting } from "@/components/auth/auth-greeting";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { SessionConsole } from "@/components/session-console";
 
@@ -6,9 +8,11 @@ export default function SessionPage() {
     <AppShell
       active="/session"
       eyebrow="Hello"
-      title="Hi, quizmaster."
+      title={<AuthGreeting fallback="Hi, quizmaster." />}
     >
-      <SessionConsole />
+      <RequireAuth adminOnly>
+        <SessionConsole />
+      </RequireAuth>
     </AppShell>
   );
 }

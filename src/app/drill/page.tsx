@@ -1,3 +1,5 @@
+import { AuthGreeting } from "@/components/auth/auth-greeting";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { DrillCard } from "@/components/drill-card";
 import { StatRow } from "@/components/stat-row";
@@ -7,7 +9,7 @@ export default function DrillPage() {
     <AppShell
       active="/drill"
       eyebrow="Hello"
-      title="Hi, Maulidan."
+      title={<AuthGreeting />}
       aside={
         <div className="rounded border border-ink-200 bg-white p-5">
           <h2 className="text-sm font-semibold text-ink-900">Queue</h2>
@@ -19,7 +21,9 @@ export default function DrillPage() {
         </div>
       }
     >
-      <DrillCard />
+      <RequireAuth>
+        <DrillCard />
+      </RequireAuth>
     </AppShell>
   );
 }

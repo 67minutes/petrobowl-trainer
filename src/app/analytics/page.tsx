@@ -1,3 +1,5 @@
+import { AuthGreeting } from "@/components/auth/auth-greeting";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { ProgressBar } from "@/components/progress-bar";
 import { demoScores } from "@/lib/demo-data";
@@ -14,33 +16,35 @@ export default function AnalyticsPage() {
     <AppShell
       active="/analytics"
       eyebrow="Hello"
-      title="Hi, team."
+      title={<AuthGreeting fallback="Hi, team." />}
     >
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded border border-ink-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-ink-900">Latest session scores</h2>
-          <div className="mt-4 divide-y divide-ink-200">
-            {demoScores.map((score) => (
-              <div key={score.playerId} className="py-4">
-                <div className="mb-3 flex items-center justify-between gap-4">
-                  <p className="font-medium text-ink-900">{score.name}</p>
-                  <p className="text-xl font-semibold text-ink-900">{score.totalScore}</p>
+      <RequireAuth>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <section className="rounded border border-ink-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-ink-900">Latest session scores</h2>
+            <div className="mt-4 divide-y divide-ink-200">
+              {demoScores.map((score) => (
+                <div key={score.playerId} className="py-4">
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <p className="font-medium text-ink-900">{score.name}</p>
+                    <p className="text-xl font-semibold text-ink-900">{score.totalScore}</p>
+                  </div>
+                  <ProgressBar value={Math.max(0, score.totalScore)} label="Total score" />
                 </div>
-                <ProgressBar value={Math.max(0, score.totalScore)} label="Total score" />
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
 
-        <section className="surface rounded p-5">
-          <h2 className="text-lg font-semibold text-ink-900">Topic hit rate</h2>
-          <div className="mt-4 space-y-5">
-            {topicRows.map((row) => (
-              <ProgressBar key={row.topic} value={row.hitRate} label={`${row.topic} - ${row.owner}`} />
-            ))}
-          </div>
-        </section>
-      </div>
+          <section className="surface rounded p-5">
+            <h2 className="text-lg font-semibold text-ink-900">Topic hit rate</h2>
+            <div className="mt-4 space-y-5">
+              {topicRows.map((row) => (
+                <ProgressBar key={row.topic} value={row.hitRate} label={`${row.topic} - ${row.owner}`} />
+              ))}
+            </div>
+          </section>
+        </div>
+      </RequireAuth>
     </AppShell>
   );
 }
