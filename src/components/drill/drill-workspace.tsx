@@ -16,6 +16,7 @@ export function DrillWorkspace() {
   const [data, setData] = useState<DrillQueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [overrideLimit, setOverrideLimit] = useState(false);
 
   const loadQueue = useCallback(async () => {
     if (!session?.access_token) {
@@ -28,7 +29,8 @@ export function DrillWorkspace() {
     setError(null);
 
     try {
-      const response = await fetch("/api/drill/queue", {
+      const url = overrideLimit ? "/api/drill/queue?overrideLimit=true" : "/api/drill/queue";
+      const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${session.access_token}`
         }
@@ -45,7 +47,7 @@ export function DrillWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [session?.access_token]);
+  }, [session?.access_token, overrideLimit]);
 
   useEffect(() => {
     void loadQueue();
@@ -68,9 +70,28 @@ export function DrillWorkspace() {
     );
   }
 
+  const limitReached =
+    !data.card && data.stats.dueReviews === 0 && data.stats.unseenQuestions > 0 && !overrideLimit;
+
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <DrillCard card={data.card} accessToken={session?.access_token ?? ""} onReviewed={loadQueue} />
+      {limitReached ? (
+        <div className="surface rounded p-5">
+          <h2 className="text-lg font-semibold text-ink-900">Daily limit reached.</h2>
+          <p className="mt-2 text-sm text-ink-500">
+            {data.stats.unseenQuestions} unseen card{data.stats.unseenQuestions !== 1 ? "s" : ""} remaining.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOverrideLimit(true)}
+            className="focus-ring mt-5 inline-flex items-center rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
+          >
+            Continue anyway
+          </button>
+        </div>
+      ) : (
+        <DrillCard card={data.card} accessToken={session?.access_token ?? ""} onReviewed={loadQueue} />
+      )}
       <aside className="rounded border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">Queue</h2>
         <div className="mt-3">

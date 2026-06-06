@@ -1,7 +1,7 @@
 import type { PlayerRole } from "@/types/database";
 
 export const TEAM_NAME = "SPE ITB 2026";
-export const DAILY_NEW_CARD_LIMIT = 30;
+export const DAILY_NEW_CARD_LIMIT = 100;
 
 export type SeedPlayer = {
   name: string;

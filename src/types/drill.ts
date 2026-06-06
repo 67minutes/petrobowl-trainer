@@ -15,6 +15,7 @@ export type DrillQueueStats = {
   assignedQuestions: number;
   dueReviews: number;
   newCards: number;
+  unseenQuestions: number;
   mastered: number;
 };
 

@@ -182,6 +182,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    const overrideLimit = new URL(request.url).searchParams.get("overrideLimit") === "true";
     const today = todayDateOnly();
     const [
       { data: topics, error: topicsError },
@@ -221,10 +222,9 @@ export async function GET(request: Request) {
     let selectedQuestion: QueueQuestion | null = null;
     const dailyLimit = Number(process.env.PETROBOWL_DAILY_NEW_CARD_LIMIT ?? DAILY_NEW_CARD_LIMIT);
     const unseenQuestions = Math.max(assignedQuestions - progressRows.length, 0);
-    const remainingNewCardsToday = Math.min(
-      Math.max(dailyLimit - newCardsIntroducedToday, 0),
-      unseenQuestions
-    );
+    const remainingNewCardsToday = overrideLimit
+      ? unseenQuestions
+      : Math.min(Math.max(dailyLimit - newCardsIntroducedToday, 0), unseenQuestions);
 
     if (dueProgress) {
       const { data: dueQuestion, error: dueQuestionError } = await supabase
@@ -295,6 +295,7 @@ export async function GET(request: Request) {
         assignedQuestions,
         dueReviews: dueProgressRows.length,
         newCards: remainingNewCardsToday,
+        unseenQuestions,
         mastered: progressRows.filter((row) => row.interval_days >= 21).length
       }
     };
