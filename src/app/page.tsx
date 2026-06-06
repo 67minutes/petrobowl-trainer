@@ -12,16 +12,14 @@ export default function Home() {
   return (
     <AppShell
       active="/"
-      eyebrow="Training cockpit"
-      title="Solo mastery first, buzzer speed second."
-      subtitle="The first screen tracks what matters today: due reviews, topic ownership, and readiness for the next live session."
+      eyebrow="Hello"
+      title="Hi, Maulidan."
       aside={
         <div className="surface rounded p-5">
           <div className="flex items-center gap-3">
             <LockKeyhole aria-hidden className="h-5 w-5 text-petrol-600" />
             <div>
-              <h2 className="text-sm font-semibold text-ink-900">Supabase Auth</h2>
-              <p className="mt-1 text-xs text-ink-500">Email login connects users to player rows.</p>
+              <h2 className="text-sm font-semibold text-ink-900">Welcome back.</h2>
             </div>
           </div>
           <div className="mt-5 space-y-3">
@@ -46,9 +44,7 @@ export default function Home() {
           <div className="flex flex-col justify-between gap-4 border-b border-ink-200 pb-5 sm:flex-row sm:items-center">
             <div>
               <h2 className="text-lg font-semibold text-ink-900">{demoTeam.name}</h2>
-              <p className="mt-1 text-sm text-ink-500">
-                {demoTeam.totalQuestions.toLocaleString()} imported terms, {demoTeam.dailyNewCardLimit} new cards per day.
-              </p>
+              <p className="mt-1 text-sm text-ink-500">Good to see you.</p>
             </div>
             <Link
               href="/drill"
@@ -60,7 +56,7 @@ export default function Home() {
           </div>
 
           <div className="mt-5">
-            <ProgressBar value={(teamMastered / teamAssigned) * 100} label="Team readiness" />
+            <ProgressBar value={(teamMastered / teamAssigned) * 100} label="Team" />
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-4">
@@ -76,9 +72,9 @@ export default function Home() {
 
         <section className="rounded border border-ink-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-ink-900">Today</h2>
-          <StatRow label="Due reviews" value="184" detail="Prioritized before new cards" tone="warn" />
-          <StatRow label="Reviewed" value="102" detail="Logged across all players" tone="good" />
-          <StatRow label="Unowned terms" value="962" detail="Renewables IEA + EIA pool" />
+          <StatRow label="Due reviews" value="184" tone="warn" />
+          <StatRow label="Reviewed" value="102" tone="good" />
+          <StatRow label="Unowned terms" value="962" />
         </section>
       </div>
     </AppShell>

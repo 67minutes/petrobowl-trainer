@@ -42,10 +42,7 @@ export function ImportPanel() {
     <form action={submit} className="surface rounded p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink-900">Question bank import</h2>
-          <p className="mt-1 text-sm leading-6 text-ink-600">
-            Upload `ALL_COMPILED.xlsx` to verify detected topics, assignments, and row counts.
-          </p>
+          <h2 className="text-lg font-semibold text-ink-900">Hello, admin.</h2>
         </div>
         <Upload aria-hidden className="h-5 w-5 text-petrol-600" />
       </div>

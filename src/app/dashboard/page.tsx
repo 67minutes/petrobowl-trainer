@@ -12,9 +12,8 @@ export default function DashboardPage() {
   return (
     <AppShell
       active="/dashboard"
-      eyebrow="Player dashboard"
-      title="Maulidan has 44 cards due today."
-      subtitle="Due reviews are served before new cards so retention stays on schedule."
+      eyebrow="Hello"
+      title="Hi, Maulidan."
       aside={
         <div className="rounded border border-ink-200 bg-white p-5">
           <h2 className="text-sm font-semibold text-ink-900">Weak spots</h2>
@@ -55,7 +54,6 @@ export default function DashboardPage() {
       <section className="mt-6">
         <div className="mb-3 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold text-ink-900">Team mastery</h2>
-          <p className="text-sm text-ink-500">Demo data until Supabase is connected</p>
         </div>
         <PlayerTable />
       </section>

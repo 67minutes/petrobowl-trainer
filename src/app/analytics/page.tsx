@@ -13,9 +13,8 @@ export default function AnalyticsPage() {
   return (
     <AppShell
       active="/analytics"
-      eyebrow="Analytics"
-      title="Buzzer misses feed back into the drill queue."
-      subtitle="Session reports expose on-topic defense, out-of-topic offense, and topics that need spaced repetition resets."
+      eyebrow="Hello"
+      title="Hi, team."
     >
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded border border-ink-200 bg-white p-5">
