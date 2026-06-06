@@ -1,7 +1,7 @@
 import { ProgressBar } from "@/components/progress-bar";
-import { demoPlayers } from "@/lib/demo-data";
+import type { DashboardPlayerRow } from "@/types/dashboard";
 
-export function PlayerTable() {
+export function PlayerTable({ players }: { players: DashboardPlayerRow[] }) {
   return (
     <div className="overflow-hidden rounded border border-ink-200 bg-white">
       <table className="w-full border-collapse text-left text-sm">
@@ -14,13 +14,16 @@ export function PlayerTable() {
           </tr>
         </thead>
         <tbody>
-          {demoPlayers.map((player) => {
-            const mastery = (player.mastered / player.assignedQuestions) * 100;
+          {players.map((player) => {
+            const mastery =
+              player.assignedQuestions === 0
+                ? 0
+                : (player.mastered / player.assignedQuestions) * 100;
             return (
               <tr key={player.name} className="border-t border-ink-200">
                 <td className="px-4 py-4">
                   <p className="font-medium text-ink-900">{player.name}</p>
-                  <p className="mt-1 text-xs text-ink-500">{player.topics.length} topics</p>
+                  <p className="mt-1 text-xs text-ink-500">{player.topicCount} topics</p>
                 </td>
                 <td className="px-4 py-4 text-ink-700">{player.assignedQuestions.toLocaleString()}</td>
                 <td className="min-w-44 px-4 py-4">
