@@ -80,13 +80,22 @@ export async function importQuestionBankToSupabase(
       `Upsert topic ${topic.name}`
     );
 
-    const payload = topic.questions.map((question) => ({
-      topic_id: topicRow.id,
-      question: question.question,
-      answer: question.answer,
-      metadata: question.metadata,
-      display_order: question.displayOrder
-    }));
+    const seenQuestionKeys = new Set<string>();
+    const payload = topic.questions.flatMap((question) => {
+      const key = `${question.question}\u0000${question.answer}`;
+      if (seenQuestionKeys.has(key)) {
+        return [];
+      }
+
+      seenQuestionKeys.add(key);
+      return {
+        topic_id: topicRow.id,
+        question: question.question,
+        answer: question.answer,
+        metadata: question.metadata,
+        display_order: question.displayOrder
+      };
+    });
 
     for (let index = 0; index < payload.length; index += 500) {
       const chunk = payload.slice(index, index + 500);
