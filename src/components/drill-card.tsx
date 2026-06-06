@@ -1,15 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, RotateCcw } from "lucide-react";
-import { reviewCard, type ReviewRating } from "@/lib/sm2";
-
-const sampleCard = {
-  question:
-    "A pressure transient analysis method used to estimate reservoir pressure, permeability, and wellbore storage from pressure behavior after flow rate changes.",
-  answer: "Well test analysis",
-  topic: "Well Test"
-};
+import type { ReviewRating } from "@/lib/sm2";
+import type { DrillQueueCard, DrillReviewResult } from "@/types/drill";
 
 const ratings: { id: ReviewRating; label: string; detail: string }[] = [
   { id: "again", label: "Again", detail: "Wrong" },
@@ -18,31 +12,93 @@ const ratings: { id: ReviewRating; label: string; detail: string }[] = [
   { id: "easy", label: "Easy", detail: "Instant" }
 ];
 
-export function DrillCard() {
-  const [shown, setShown] = useState(false);
-  const [rating, setRating] = useState<ReviewRating | null>(null);
+type DrillCardProps = {
+  card: DrillQueueCard | null;
+  accessToken: string;
+  onReviewed: () => Promise<void>;
+};
 
-  const preview = useMemo(() => {
-    if (!rating) {
-      return null;
+type ReviewResponse = {
+  result?: DrillReviewResult;
+  error?: string;
+};
+
+export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
+  const [shown, setShown] = useState(false);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [submitting, setSubmitting] = useState<ReviewRating | null>(null);
+  const [result, setResult] = useState<DrillReviewResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShown(false);
+    setStartedAt(Date.now());
+    setSubmitting(null);
+    setResult(null);
+    setError(null);
+  }, [card?.questionId]);
+
+  async function submitReview(rating: ReviewRating) {
+    if (!card) {
+      return;
     }
-    return reviewCard({ easeFactor: 2.5, intervalDays: 1, repetitions: 0 }, rating, new Date("2026-06-06T00:00:00Z"));
-  }, [rating]);
+
+    setSubmitting(rating);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/drill/review", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: card.questionId,
+          rating,
+          responseTimeMs: Math.max(0, Date.now() - startedAt)
+        })
+      });
+      const payload = (await response.json()) as ReviewResponse;
+
+      if (!response.ok || !payload.result) {
+        throw new Error(payload.error ?? "Review unavailable.");
+      }
+
+      setResult(payload.result);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Review unavailable.");
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
+  if (!card) {
+    return (
+      <div className="surface rounded p-5">
+        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <p className="mt-3 text-sm text-ink-500">No cards yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="surface rounded p-5">
       <div className="flex items-start justify-between gap-4 border-b border-ink-200 pb-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
-            {sampleCard.topic}
+            {card.topic}
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-ink-900">Due review</h2>
+          <h2 className="mt-2 text-xl font-semibold text-ink-900">
+            {card.isNew ? "New card" : "Due review"}
+          </h2>
         </div>
         <button
           type="button"
           onClick={() => {
             setShown(false);
-            setRating(null);
+            setResult(null);
+            setError(null);
           }}
           className="focus-ring rounded p-2 text-ink-500 transition hover:bg-white hover:text-ink-900"
           title="Reset card"
@@ -52,12 +108,12 @@ export function DrillCard() {
         </button>
       </div>
 
-      <p className="mt-5 min-h-28 text-lg leading-8 text-ink-900">{sampleCard.question}</p>
+      <p className="mt-5 min-h-28 text-lg leading-8 text-ink-900">{card.question}</p>
 
       {shown ? (
         <div className="mt-5 border-l-4 border-petrol-500 bg-petrol-500/10 px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-petrol-600">Answer</p>
-          <p className="mt-1 text-lg font-semibold text-ink-900">{sampleCard.answer}</p>
+          <p className="mt-1 text-lg font-semibold text-ink-900">{card.answer}</p>
         </div>
       ) : null}
 
@@ -76,22 +132,36 @@ export function DrillCard() {
             <button
               key={item.id}
               type="button"
-              onClick={() => setRating(item.id)}
+              onClick={() => void submitReview(item.id)}
+              disabled={Boolean(result) || Boolean(submitting)}
               className="focus-ring rounded border border-ink-200 bg-white px-3 py-3 text-left transition hover:border-petrol-500 hover:text-petrol-600"
             >
               <span className="block text-sm font-semibold">{item.label}</span>
-              <span className="text-xs text-ink-500">{item.detail}</span>
+              <span className="text-xs text-ink-500">
+                {submitting === item.id ? "Saving" : item.detail}
+              </span>
             </button>
           ))}
         </div>
       )}
 
-      {preview ? (
+      {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+
+      {result ? (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="mt-4 text-sm text-ink-600">
-          Next review: <span className="font-medium text-ink-900">{preview.nextReview}</span>, interval{" "}
-          <span className="font-medium text-ink-900">{preview.intervalDays} days</span>, ease{" "}
-          <span className="font-medium text-ink-900">{preview.easeFactor.toFixed(2)}</span>.
+          Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
+          <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
+          <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
         </p>
+          <button
+            type="button"
+            onClick={() => void onReviewed()}
+            className="focus-ring inline-flex items-center justify-center rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
+          >
+            Next
+          </button>
+        </div>
       ) : null}
     </div>
   );
