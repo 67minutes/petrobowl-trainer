@@ -95,6 +95,7 @@ function emptyQueue(): DrillQueueData {
       assignedQuestions: 0,
       dueReviews: 0,
       newCards: 0,
+      unseenQuestions: 0,
       mastered: 0
     }
   };
