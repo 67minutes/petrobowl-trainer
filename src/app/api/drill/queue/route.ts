@@ -83,6 +83,11 @@ function todayDateOnly() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function startOfTodayIso() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}
+
 function emptyQueue(): DrillQueueData {
   return {
     card: null,
@@ -93,6 +98,43 @@ function emptyQueue(): DrillQueueData {
       mastered: 0
     }
   };
+}
+
+async function countNewCardsIntroducedToday(
+  supabase: ReturnType<typeof createServiceSupabaseClient>,
+  playerId: string
+) {
+  const todayStart = startOfTodayIso();
+  const responsesToday = await fetchAllPages<{ question_id: string }>(
+    (from, to) =>
+      supabase
+        .from("drill_responses")
+        .select("question_id")
+        .eq("player_id", playerId)
+        .gte("reviewed_at", todayStart)
+        .range(from, to),
+    "Could not load today's responses"
+  );
+  const questionIdsReviewedToday = [...new Set(responsesToday.map((response) => response.question_id))];
+
+  if (!questionIdsReviewedToday.length) {
+    return 0;
+  }
+
+  const priorResponses = await fetchAllPages<{ question_id: string }>(
+    (from, to) =>
+      supabase
+        .from("drill_responses")
+        .select("question_id")
+        .eq("player_id", playerId)
+        .in("question_id", questionIdsReviewedToday)
+        .lt("reviewed_at", todayStart)
+        .range(from, to),
+    "Could not load prior responses"
+  );
+  const questionIdsSeenBeforeToday = new Set(priorResponses.map((response) => response.question_id));
+
+  return questionIdsReviewedToday.filter((questionId) => !questionIdsSeenBeforeToday.has(questionId)).length;
 }
 
 export async function GET(request: Request) {
@@ -141,7 +183,12 @@ export async function GET(request: Request) {
 
   try {
     const today = todayDateOnly();
-    const [{ data: topics, error: topicsError }, assignedQuestions, progressRows] = await Promise.all([
+    const [
+      { data: topics, error: topicsError },
+      assignedQuestions,
+      progressRows,
+      newCardsIntroducedToday
+    ] = await Promise.all([
       supabase.from("topics").select("id, name").in("id", topicIds),
       countAssignedQuestions(supabase, topicIds),
       fetchAllPages<{
@@ -158,7 +205,8 @@ export async function GET(request: Request) {
             .eq("player_id", activePlayer.id)
             .range(from, to),
         "Could not load progress"
-      )
+      ),
+      countNewCardsIntroducedToday(supabase, activePlayer.id)
     ]);
 
     if (topicsError || !topics) {
@@ -171,6 +219,12 @@ export async function GET(request: Request) {
       .sort((left, right) => left.next_review.localeCompare(right.next_review));
     const dueProgress = dueProgressRows[0] ?? null;
     let selectedQuestion: QueueQuestion | null = null;
+    const dailyLimit = Number(process.env.PETROBOWL_DAILY_NEW_CARD_LIMIT ?? DAILY_NEW_CARD_LIMIT);
+    const unseenQuestions = Math.max(assignedQuestions - progressRows.length, 0);
+    const remainingNewCardsToday = Math.min(
+      Math.max(dailyLimit - newCardsIntroducedToday, 0),
+      unseenQuestions
+    );
 
     if (dueProgress) {
       const { data: dueQuestion, error: dueQuestionError } = await supabase
@@ -187,7 +241,7 @@ export async function GET(request: Request) {
       selectedQuestion = dueQuestion;
     }
 
-    if (!selectedQuestion) {
+    if (!selectedQuestion && remainingNewCardsToday > 0) {
       const seenQuestionIds = new Set(progressRows.map((row) => row.question_id));
       const pageSize = 100;
 
@@ -235,13 +289,12 @@ export async function GET(request: Request) {
         }
       : null;
 
-    const dailyLimit = Number(process.env.PETROBOWL_DAILY_NEW_CARD_LIMIT ?? DAILY_NEW_CARD_LIMIT);
     const data: DrillQueueData = {
       card,
       stats: {
         assignedQuestions,
         dueReviews: dueProgressRows.length,
-        newCards: Math.min(Math.max(assignedQuestions - progressRows.length, 0), dailyLimit),
+        newCards: remainingNewCardsToday,
         mastered: progressRows.filter((row) => row.interval_days >= 21).length
       }
     };
