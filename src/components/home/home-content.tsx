@@ -14,7 +14,8 @@ export function HomeContent() {
   if (!session) {
     return (
       <section className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Sign in to start training</h2>
+        <p className="mt-2 text-sm text-ink-500">Your drill queue and team snapshot appear after authentication.</p>
       </section>
     );
   }
@@ -22,7 +23,8 @@ export function HomeContent() {
   if (loading) {
     return (
       <section className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Loading team snapshot</h2>
+        <p className="mt-2 text-sm text-ink-500">Checking due reviews and team mastery.</p>
       </section>
     );
   }
@@ -30,7 +32,7 @@ export function HomeContent() {
   if (error || !data) {
     return (
       <section className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Home data unavailable</h2>
         <p className="mt-3 text-sm text-red-600">{error ?? "Dashboard unavailable."}</p>
       </section>
     );
@@ -72,7 +74,7 @@ export function HomeContent() {
       </section>
 
       <section className="rounded border border-ink-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Team queue</h2>
         <StatRow label="Due today" value={String(teamDue)} tone="warn" />
         <StatRow label="Reviewed today" value={String(reviewedToday)} tone="good" />
         <StatRow label="Unowned terms" value={data.unownedQuestions.toLocaleString()} />

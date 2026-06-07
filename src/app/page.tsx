@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <AppShell
       active="/"
-      eyebrow="Hello"
+      eyebrow="Training home"
       title={<AuthGreeting />}
       aside={<AuthPanel />}
     >

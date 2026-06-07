@@ -111,7 +111,8 @@ export function SessionConsole() {
   if (loading) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Loading session console</h2>
+        <p className="mt-2 text-sm text-ink-500">Checking for an active quizmaster session.</p>
       </div>
     );
   }
@@ -123,7 +124,7 @@ export function SessionConsole() {
 
         {!activeSession ? (
           <div>
-            <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+            <h2 className="text-lg font-semibold text-ink-900">Start buzzer session</h2>
             <div className="mt-5 flex flex-col gap-3 sm:max-w-xs">
               <label className="text-sm font-medium text-ink-900" htmlFor="session-size">
                 Questions
@@ -261,7 +262,7 @@ export function SessionConsole() {
           </div>
         ) : (
           <div>
-            <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+            <h2 className="text-lg font-semibold text-ink-900">No session questions</h2>
             <p className="mt-3 text-sm text-ink-500">No questions.</p>
           </div>
         )}

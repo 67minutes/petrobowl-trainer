@@ -7,8 +7,9 @@ export default function SessionPage() {
   return (
     <AppShell
       active="/session"
-      eyebrow="Hello"
+      eyebrow="Buzzer session"
       title={<AuthGreeting fallback="Hi, quizmaster." />}
+      subtitle="Run quizmaster-led sessions and capture the scoring data for analytics."
     >
       <RequireAuth adminOnly>
         <SessionConsole />

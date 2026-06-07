@@ -12,7 +12,8 @@ export function DashboardContent() {
   if (loading) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Loading dashboard</h2>
+        <p className="mt-2 text-sm text-ink-500">Preparing your due cards, weak spots, and team mastery.</p>
       </div>
     );
   }
@@ -20,7 +21,7 @@ export function DashboardContent() {
   if (error || !data || !activePlayer) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-lg font-semibold text-ink-900">Dashboard unavailable</h2>
         <p className="mt-3 text-sm text-red-600">{error ?? "Dashboard unavailable."}</p>
       </div>
     );

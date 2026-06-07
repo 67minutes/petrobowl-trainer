@@ -1,4 +1,3 @@
-import { AuthGreeting } from "@/components/auth/auth-greeting";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { ImportPanel } from "@/components/import-panel";
@@ -8,8 +7,9 @@ export default function AdminPage() {
   return (
     <AppShell
       active="/admin"
-      eyebrow="Hello"
-      title={<AuthGreeting />}
+      eyebrow="Admin"
+      title="Question bank controls"
+      subtitle="Import questions and review the current topic ownership map."
     >
       <RequireAuth adminOnly>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">

@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PetroBowl Trainer",
-  description: "Hello from PetroBowl Trainer."
+  description: "Solo drills, quiz sessions, and analytics for PetroBowl training."
 };
 
 export default function RootLayout({

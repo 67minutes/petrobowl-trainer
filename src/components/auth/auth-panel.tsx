@@ -29,7 +29,7 @@ export function AuthPanel() {
   if (loading) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-sm font-semibold text-ink-900">Hello.</h2>
+        <h2 className="text-sm font-semibold text-ink-900">Checking session</h2>
       </div>
     );
   }

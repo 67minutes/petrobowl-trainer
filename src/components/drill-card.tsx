@@ -76,8 +76,10 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
   if (!card) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Hello.</h2>
-        <p className="mt-3 text-sm text-ink-500">No cards yet.</p>
+        <h2 className="text-lg font-semibold text-ink-900">No matching cards</h2>
+        <p className="mt-3 text-sm text-ink-500">
+          Try another priority mode or widen the topic selection.
+        </p>
       </div>
     );
   }
@@ -149,11 +151,11 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
 
       {result ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="mt-4 text-sm text-ink-600">
-          Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
-          <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
-          <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
-        </p>
+          <p className="text-sm text-ink-600">
+            Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
+            <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
+            <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
+          </p>
           <button
             type="button"
             onClick={() => void onReviewed()}

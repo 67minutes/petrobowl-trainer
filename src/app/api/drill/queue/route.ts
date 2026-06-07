@@ -1,23 +1,30 @@
 import { NextResponse } from "next/server";
 import { DAILY_NEW_CARD_LIMIT } from "@/lib/constants";
+import {
+  buildTopicOptions,
+  isWeakCard,
+  parseDrillMode,
+  resolveSelectedTopicIds,
+  selectNextQuestion,
+  type QueueQuestion,
+  type QueueResponseStats
+} from "@/lib/drill-queue";
 import { createServiceSupabaseClient } from "@/lib/supabase";
 import type { DrillQueueCard, DrillQueueData } from "@/types/drill";
 
 export const runtime = "nodejs";
-
-const ASSIGNED_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
-const assignedCountCache = new Map<string, { count: number; expiresAt: number }>();
 
 type PageResult<T> = {
   data: T[] | null;
   error: { message: string } | null;
 };
 
-type QueueQuestion = {
+type QueueQuestionRow = {
   id: string;
   topic_id: string;
   question: string;
   answer: string;
+  display_order: number;
 };
 
 async function fetchAllPages<T>(
@@ -42,43 +49,6 @@ async function fetchAllPages<T>(
   }
 }
 
-async function countRows(
-  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
-  label: string
-) {
-  const { count, error } = await query;
-
-  if (error || count === null) {
-    throw new Error(`${label}: ${error?.message ?? "missing count"}`);
-  }
-
-  return count;
-}
-
-async function countAssignedQuestions(
-  supabase: ReturnType<typeof createServiceSupabaseClient>,
-  topicIds: string[]
-) {
-  const cacheKey = [...topicIds].sort().join(",");
-  const cached = assignedCountCache.get(cacheKey);
-
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.count;
-  }
-
-  const count = await countRows(
-    supabase.from("questions").select("id", { count: "exact", head: true }).in("topic_id", topicIds),
-    "Could not count assigned questions"
-  );
-
-  assignedCountCache.set(cacheKey, {
-    count,
-    expiresAt: Date.now() + ASSIGNED_COUNT_CACHE_TTL_MS
-  });
-
-  return count;
-}
-
 function todayDateOnly() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -91,14 +61,25 @@ function startOfTodayIso() {
 function emptyQueue(): DrillQueueData {
   return {
     card: null,
+    mode: "smart",
+    selectedTopicIds: [],
+    topicOptions: [],
     stats: {
       assignedQuestions: 0,
       dueReviews: 0,
       newCards: 0,
       unseenQuestions: 0,
-      mastered: 0
+      mastered: 0,
+      weakCards: 0
     }
   };
+}
+
+function readRequestedTopicIds(searchParams: URLSearchParams) {
+  return [...searchParams.getAll("topicIds"), ...searchParams.getAll("topicId")]
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 async function countNewCardsIntroducedToday(
@@ -136,6 +117,46 @@ async function countNewCardsIntroducedToday(
   const questionIdsSeenBeforeToday = new Set(priorResponses.map((response) => response.question_id));
 
   return questionIdsReviewedToday.filter((questionId) => !questionIdsSeenBeforeToday.has(questionId)).length;
+}
+
+function buildResponseStats(
+  rows: { question_id: string; rating: string; response_time_ms: number; reviewed_at: string }[],
+  allowedQuestionIds: Set<string>
+) {
+  const totals = new Map<
+    string,
+    { againCount: number; responseTimeTotal: number; responseCount: number; lastReviewedAt: string | null }
+  >();
+
+  for (const row of rows) {
+    if (!allowedQuestionIds.has(row.question_id)) {
+      continue;
+    }
+
+    const current = totals.get(row.question_id) ?? {
+      againCount: 0,
+      responseTimeTotal: 0,
+      responseCount: 0,
+      lastReviewedAt: null
+    };
+    current.againCount += row.rating === "again" ? 1 : 0;
+    current.responseTimeTotal += row.response_time_ms;
+    current.responseCount += 1;
+    current.lastReviewedAt =
+      !current.lastReviewedAt || row.reviewed_at > current.lastReviewedAt ? row.reviewed_at : current.lastReviewedAt;
+    totals.set(row.question_id, current);
+  }
+
+  return new Map<string, QueueResponseStats>(
+    [...totals.entries()].map(([questionId, stats]) => [
+      questionId,
+      {
+        againCount: stats.againCount,
+        averageResponseTimeMs: stats.responseCount ? stats.responseTimeTotal / stats.responseCount : 0,
+        lastReviewedAt: stats.lastReviewedAt
+      }
+    ])
+  );
 }
 
 export async function GET(request: Request) {
@@ -176,23 +197,43 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: assignmentsError.message }, { status: 500 });
   }
 
-  const topicIds = assignments?.map((assignment) => assignment.topic_id) ?? [];
+  const activeTopicIds = assignments?.map((assignment) => assignment.topic_id as string) ?? [];
 
-  if (!topicIds.length) {
+  if (!activeTopicIds.length) {
     return NextResponse.json({ data: emptyQueue() });
   }
 
   try {
-    const overrideLimit = new URL(request.url).searchParams.get("overrideLimit") === "true";
+    const url = new URL(request.url);
+    const searchParams = url.searchParams;
+    const mode = parseDrillMode(searchParams.get("mode"));
+    const limitOverride =
+      searchParams.get("limitOverride") === "true" || searchParams.get("overrideLimit") === "true";
+    const selectedTopicIds = resolveSelectedTopicIds(activeTopicIds, readRequestedTopicIds(searchParams));
     const today = todayDateOnly();
+
     const [
-      { data: topics, error: topicsError },
-      assignedQuestions,
+      { data: topicRows, error: topicsError },
+      questionRows,
       progressRows,
+      responseRows,
       newCardsIntroducedToday
     ] = await Promise.all([
-      supabase.from("topics").select("id, name").in("id", topicIds),
-      countAssignedQuestions(supabase, topicIds),
+      supabase
+        .from("topics")
+        .select("id, name, display_order")
+        .in("id", activeTopicIds)
+        .order("display_order"),
+      fetchAllPages<QueueQuestionRow>(
+        (from, to) =>
+          supabase
+            .from("questions")
+            .select("id, topic_id, question, answer, display_order")
+            .in("topic_id", activeTopicIds)
+            .order("display_order")
+            .range(from, to),
+        "Could not load assigned questions"
+      ),
       fetchAllPages<{
         question_id: string;
         ease_factor: number;
@@ -208,96 +249,110 @@ export async function GET(request: Request) {
             .range(from, to),
         "Could not load progress"
       ),
+      fetchAllPages<{ question_id: string; rating: string; response_time_ms: number; reviewed_at: string }>(
+        (from, to) =>
+          supabase
+            .from("drill_responses")
+            .select("question_id, rating, response_time_ms, reviewed_at")
+            .eq("player_id", activePlayer.id)
+            .range(from, to),
+        "Could not load response history"
+      ),
       countNewCardsIntroducedToday(supabase, activePlayer.id)
     ]);
 
-    if (topicsError || !topics) {
+    if (topicsError || !topicRows) {
       return NextResponse.json({ error: topicsError?.message ?? "Could not load topics." }, { status: 500 });
     }
 
-    const topicNameById = new Map(topics.map((topic) => [topic.id, topic.name]));
-    const dueProgressRows = progressRows
-      .filter((row) => row.next_review <= today)
-      .sort((left, right) => left.next_review.localeCompare(right.next_review));
-    const dueProgress = dueProgressRows[0] ?? null;
-    let selectedQuestion: QueueQuestion | null = null;
+    const topics = topicRows.map((topic) => ({
+      id: topic.id as string,
+      name: topic.name as string,
+      displayOrder: Number(topic.display_order ?? 0)
+    }));
+    const questions = questionRows.map<QueueQuestion>((question) => ({
+      id: question.id,
+      topicId: question.topic_id,
+      question: question.question,
+      answer: question.answer,
+      displayOrder: Number(question.display_order ?? 0)
+    }));
+    const activeQuestionIds = new Set(questions.map((question) => question.id));
+    const activeProgressRows = progressRows
+      .filter((row) => activeQuestionIds.has(row.question_id))
+      .map((row) => ({
+        questionId: row.question_id,
+        easeFactor: row.ease_factor,
+        intervalDays: row.interval_days,
+        repetitions: row.repetitions,
+        nextReview: row.next_review
+      }));
+    const responseStatsByQuestionId = buildResponseStats(responseRows, activeQuestionIds);
+    const topicOptions = buildTopicOptions(topics, questions, activeProgressRows, responseStatsByQuestionId, today);
+    const selectedTopicSet = new Set(selectedTopicIds);
+    const selectedQuestions = questions.filter((question) => selectedTopicSet.has(question.topicId));
+    const selectedQuestionIds = new Set(selectedQuestions.map((question) => question.id));
+    const selectedProgressRows = activeProgressRows.filter((row) => selectedQuestionIds.has(row.questionId));
+    const selectedProgressByQuestionId = new Map(selectedProgressRows.map((row) => [row.questionId, row]));
+    const selectedUnseenQuestions = selectedQuestions.filter(
+      (question) => !selectedProgressByQuestionId.has(question.id)
+    ).length;
     const dailyLimit = Number(process.env.PETROBOWL_DAILY_NEW_CARD_LIMIT ?? DAILY_NEW_CARD_LIMIT);
-    const unseenQuestions = Math.max(assignedQuestions - progressRows.length, 0);
-    const remainingNewCardsToday = overrideLimit
-      ? unseenQuestions
-      : Math.min(Math.max(dailyLimit - newCardsIntroducedToday, 0), unseenQuestions);
+    const remainingDailyNewCards = Math.max(dailyLimit - newCardsIntroducedToday, 0);
+    const remainingNewCardsToday = limitOverride
+      ? selectedUnseenQuestions
+      : Math.min(remainingDailyNewCards, selectedUnseenQuestions);
+    const selectedQuestion = selectNextQuestion({
+      mode,
+      today,
+      questions,
+      progressRows: activeProgressRows,
+      responseStatsByQuestionId,
+      selectedTopicIds,
+      remainingNewCardsToday
+    });
+    const topicNameById = new Map(topics.map((topic) => [topic.id, topic.name]));
+    const selectedProgress = selectedQuestion ? selectedProgressByQuestionId.get(selectedQuestion.id) : null;
+    const dueReviews = selectedProgressRows.filter((row) => row.nextReview <= today).length;
+    const weakCards = selectedProgressRows.filter((row) =>
+      isWeakCard(row, responseStatsByQuestionId.get(row.questionId))
+    ).length;
 
-    if (dueProgress) {
-      const { data: dueQuestion, error: dueQuestionError } = await supabase
-        .from("questions")
-        .select("id, topic_id, question, answer")
-        .eq("id", dueProgress.question_id)
-        .in("topic_id", topicIds)
-        .maybeSingle();
-
-      if (dueQuestionError) {
-        return NextResponse.json({ error: dueQuestionError.message }, { status: 500 });
-      }
-
-      selectedQuestion = dueQuestion;
-    }
-
-    if (!selectedQuestion && remainingNewCardsToday > 0) {
-      const seenQuestionIds = new Set(progressRows.map((row) => row.question_id));
-      const pageSize = 100;
-
-      for (let from = 0; ; from += pageSize) {
-        const { data: questionPage, error: questionPageError } = await supabase
-          .from("questions")
-          .select("id, topic_id, question, answer, display_order")
-          .in("topic_id", topicIds)
-          .order("display_order")
-          .range(from, from + pageSize - 1);
-
-        if (questionPageError || !questionPage) {
-          return NextResponse.json(
-            { error: questionPageError?.message ?? "Could not load questions." },
-            { status: 500 }
-          );
-        }
-
-        selectedQuestion = questionPage.find((question) => !seenQuestionIds.has(question.id)) ?? null;
-
-        if (selectedQuestion || questionPage.length < pageSize) {
-          break;
-        }
-      }
-    }
-
-    const card: DrillQueueCard | null = selectedQuestion
-      ? {
-          questionId: selectedQuestion.id,
-          question: selectedQuestion.question,
-          answer: selectedQuestion.answer,
-          topic: topicNameById.get(selectedQuestion.topic_id) ?? "Topic",
-          isNew: !dueProgress,
-          progress: dueProgress
-            ? {
-                easeFactor: dueProgress.ease_factor,
-                intervalDays: dueProgress.interval_days,
-                repetitions: dueProgress.repetitions
-              }
-            : {
-                easeFactor: 2.5,
-                intervalDays: 0,
-                repetitions: 0
-              }
-        }
-      : null;
+    const card: DrillQueueCard | null =
+      selectedQuestion && selectedQuestion.question && selectedQuestion.answer
+        ? {
+            questionId: selectedQuestion.id,
+            topicId: selectedQuestion.topicId,
+            question: selectedQuestion.question,
+            answer: selectedQuestion.answer,
+            topic: topicNameById.get(selectedQuestion.topicId) ?? "Topic",
+            isNew: !selectedProgress,
+            progress: selectedProgress
+              ? {
+                  easeFactor: selectedProgress.easeFactor,
+                  intervalDays: selectedProgress.intervalDays,
+                  repetitions: selectedProgress.repetitions
+                }
+              : {
+                  easeFactor: 2.5,
+                  intervalDays: 0,
+                  repetitions: 0
+                }
+          }
+        : null;
 
     const data: DrillQueueData = {
       card,
+      mode,
+      selectedTopicIds,
+      topicOptions,
       stats: {
-        assignedQuestions,
-        dueReviews: dueProgressRows.length,
+        assignedQuestions: selectedQuestions.length,
+        dueReviews,
         newCards: remainingNewCardsToday,
-        unseenQuestions,
-        mastered: progressRows.filter((row) => row.interval_days >= 21).length
+        unseenQuestions: selectedUnseenQuestions,
+        mastered: selectedProgressRows.filter((row) => row.intervalDays >= 21).length,
+        weakCards
       }
     };
 

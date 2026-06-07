@@ -7,8 +7,9 @@ export default function DashboardPage() {
   return (
     <AppShell
       active="/dashboard"
-      eyebrow="Hello"
+      eyebrow="Dashboard"
       title={<AuthGreeting />}
+      subtitle="Today’s queue, recent activity, weak spots, and team mastery."
     >
       <RequireAuth>
         <DashboardContent />

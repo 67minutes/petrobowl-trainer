@@ -7,11 +7,11 @@ export function SessionMenu() {
   const { loading, session, player, user, signOut } = useAuth();
 
   if (loading) {
-    return <span className="hidden text-sm text-ink-500 lg:inline">Hello.</span>;
+    return <span className="hidden text-sm text-ink-500 lg:inline">Checking session</span>;
   }
 
   if (!session) {
-    return <span className="hidden text-sm text-ink-500 lg:inline">Hello.</span>;
+    return <span className="hidden text-sm text-ink-500 lg:inline">Signed out</span>;
   }
 
   return (

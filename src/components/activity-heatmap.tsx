@@ -14,7 +14,7 @@ export function ActivityHeatmap({ days }: ActivityHeatmapProps) {
           className={clsx(
             "aspect-square rounded-sm transition hover:scale-110",
             day.count === 0 && "bg-ink-200",
-            day.count > 0 && day.count < 10 && "bg-petrol-200",
+            day.count > 0 && day.count < 10 && "bg-petrol-400/35",
             day.count >= 10 && day.count < 25 && "bg-petrol-400",
             day.count >= 25 && "bg-petrol-600"
           )}
