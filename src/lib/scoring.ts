@@ -8,6 +8,7 @@ export type ScoredSessionQuestion = {
   assignedTo: string | null;
   buzzedBy: string | null;
   correct: boolean;
+  missedBy: string[];
 };
 
 export type PlayerScore = {
@@ -17,6 +18,7 @@ export type PlayerScore = {
   onTopic: number;
   outOfTopic: number;
   missedTopic: number;
+  wrongBuzzes: number;
   ownQuestions: number;
   otherQuestions: number;
   defenseScore: number;
@@ -57,9 +59,17 @@ export function calculateSessionScores(
       return question.buzzedBy !== player.id || !question.correct;
     }).length;
 
+    // First player to buzz wrong on a question that isn't their own topic takes a
+    // wrong-buzz penalty (a failed steal). Later missers are lock-outs only, and a
+    // first miss on one's own topic is already covered by missedTopic.
+    const wrongBuzzes = questions.filter(
+      (question) => question.missedBy[0] === player.id && question.assignedTo !== player.id
+    ).length;
+
     const defenseScore =
       ownQuestions === 0 ? 0 : ((onTopic - 0.5 * missedTopic) / ownQuestions) * 100;
-    const offenseBonus = otherQuestions === 0 ? 0 : ((2 * outOfTopic) / otherQuestions) * 100;
+    const offenseBonus =
+      otherQuestions === 0 ? 0 : ((2 * outOfTopic - wrongBuzzes) / otherQuestions) * 100;
     const totalScore = 0.7 * defenseScore + 0.3 * offenseBonus;
 
     return {
@@ -69,6 +79,7 @@ export function calculateSessionScores(
       onTopic,
       outOfTopic,
       missedTopic,
+      wrongBuzzes,
       ownQuestions,
       otherQuestions,
       defenseScore: roundScore(defenseScore),

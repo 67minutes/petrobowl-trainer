@@ -66,6 +66,7 @@ type SessionQuestionRow = {
   assigned_to: string | null;
   buzzed_by: string | null;
   correct: boolean;
+  missed_by: string[] | null;
 };
 
 function todayDateOnly() {
@@ -121,7 +122,7 @@ async function loadLatestSession(input: {
     (from, to) =>
       input.supabase
         .from("session_questions")
-        .select("id, question_id, assigned_to, buzzed_by, correct")
+        .select("id, question_id, assigned_to, buzzed_by, correct, missed_by")
         .eq("session_id", rawLatest.id)
         .range(from, to),
     "Could not load latest session questions"
@@ -133,7 +134,8 @@ async function loadLatestSession(input: {
       id: question.id,
       assignedTo: question.assigned_to,
       buzzedBy: question.buzzed_by,
-      correct: question.correct
+      correct: question.correct,
+      missedBy: question.missed_by ?? []
     }))
   );
   const topicMisses = new Map<string, { topic: string; misses: number; noBuzzes: number }>();

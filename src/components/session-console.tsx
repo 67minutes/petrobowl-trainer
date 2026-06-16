@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Ban, CheckCircle2, Play, Square, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Ban, CheckCircle2, Play, RotateCcw, Square, XCircle } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import type { QuizSessionData } from "@/types/session";
 
@@ -175,69 +175,107 @@ export function SessionConsole() {
               </p>
               <p className="mt-3 text-2xl font-semibold leading-9 text-ink-900">{current.question}</p>
               <p className="mt-4 text-lg text-ink-600">Answer: {current.answer}</p>
+              {current.missedBy.length ? (
+                <p className="mt-3 text-sm text-signal-600">
+                  Locked out: {current.missedByNames.join(", ")}
+                </p>
+              ) : null}
               {isAnswered(current) ? (
-                <p className="mt-3 text-sm text-ink-500">
-                  {current.buzzedByName ?? "No Buzz"} - {current.correct ? "Correct" : "Miss"}
+                <p className="mt-1 text-sm text-ink-500">
+                  {current.correct
+                    ? `${current.buzzedByName} - Correct`
+                    : current.missedBy.length
+                      ? "No correct answer"
+                      : "No Buzz"}
                 </p>
               ) : null}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              {data?.players.map((player) => (
-                <div key={player.id} className="rounded border border-ink-200 bg-white p-3">
-                  <p className="text-sm font-semibold text-ink-900">{player.name}</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() =>
-                        void postSession("/api/session/question", {
-                          sessionQuestionId: current.id,
-                          buzzedBy: player.id,
-                          correct: true
-                        })
-                      }
-                      className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <CheckCircle2 aria-hidden className="h-4 w-4" />
-                      Correct
-                    </button>
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() =>
-                        void postSession("/api/session/question", {
-                          sessionQuestionId: current.id,
-                          buzzedBy: player.id,
-                          correct: false
-                        })
-                      }
-                      className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-signal-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <XCircle aria-hidden className="h-4 w-4" />
-                      Miss
-                    </button>
+              {data?.players.map((player) => {
+                const lockedOut = current.missedBy.includes(player.id);
+                const resolved = isAnswered(current);
+
+                return (
+                  <div key={player.id} className="rounded border border-ink-200 bg-white p-3">
+                    <p className="text-sm font-semibold text-ink-900">
+                      {player.name}
+                      {lockedOut ? (
+                        <span className="ml-2 text-xs font-normal text-signal-600">locked out</span>
+                      ) : null}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={submitting || resolved || lockedOut}
+                        onClick={() =>
+                          void postSession("/api/session/question", {
+                            action: "correct",
+                            sessionQuestionId: current.id,
+                            playerId: player.id
+                          })
+                        }
+                        className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <CheckCircle2 aria-hidden className="h-4 w-4" />
+                        Correct
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting || resolved || lockedOut}
+                        onClick={() =>
+                          void postSession("/api/session/question", {
+                            action: "miss",
+                            sessionQuestionId: current.id,
+                            playerId: player.id
+                          })
+                        }
+                        className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-signal-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <XCircle aria-hidden className="h-4 w-4" />
+                        Miss
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() =>
-                  void postSession("/api/session/question", {
-                    sessionQuestionId: current.id,
-                    buzzedBy: null,
-                    correct: false
-                  })
-                }
-                className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-signal-600 transition hover:border-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Ban aria-hidden className="h-4 w-4" />
-                No Buzz
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {!isAnswered(current) ? (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() =>
+                      void postSession("/api/session/question", {
+                        action: "noCorrect",
+                        sessionQuestionId: current.id
+                      })
+                    }
+                    className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-signal-600 transition hover:border-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Ban aria-hidden className="h-4 w-4" />
+                    {current.missedBy.length ? "No correct answer" : "No Buzz"}
+                  </button>
+                ) : null}
+                {isAnswered(current) || current.missedBy.length ? (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() =>
+                      void postSession("/api/session/question", {
+                        action: "reset",
+                        sessionQuestionId: current.id
+                      })
+                    }
+                    className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-600 transition hover:border-ink-400 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <RotateCcw aria-hidden className="h-4 w-4" />
+                    Reset
+                  </button>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"

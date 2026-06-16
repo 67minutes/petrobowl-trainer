@@ -26,6 +26,7 @@ type RawSessionQuestion = {
   assigned_to: string | null;
   buzzed_by: string | null;
   correct: boolean;
+  missed_by: string[] | null;
   questions: { question: string; answer: string } | { question: string; answer: string }[] | null;
 };
 
@@ -126,7 +127,7 @@ export async function loadSessionData(supabase: SupabaseClient, teamId: string):
 
   const { data: questionRows, error: questionsError } = await supabase
     .from("session_questions")
-    .select("id, question_id, question_order, assigned_to, buzzed_by, correct, questions(question, answer)")
+    .select("id, question_id, question_order, assigned_to, buzzed_by, correct, missed_by, questions(question, answer)")
     .eq("session_id", rawSession.id)
     .order("question_order");
 
@@ -137,6 +138,7 @@ export async function loadSessionData(supabase: SupabaseClient, teamId: string):
   const playerNameById = new Map(sessionPlayers.map((player) => [player.id, player.name]));
   const questions: QuizSessionQuestion[] = (questionRows as RawSessionQuestion[]).map((row) => {
     const question = readRelation(row.questions);
+    const missedBy = row.missed_by ?? [];
 
     return {
       id: row.id,
@@ -148,7 +150,9 @@ export async function loadSessionData(supabase: SupabaseClient, teamId: string):
       assignedToName: row.assigned_to ? playerNameById.get(row.assigned_to) ?? null : null,
       buzzedBy: row.buzzed_by,
       buzzedByName: row.buzzed_by ? playerNameById.get(row.buzzed_by) ?? null : null,
-      correct: row.correct
+      correct: row.correct,
+      missedBy,
+      missedByNames: missedBy.map((id) => playerNameById.get(id) ?? "Unknown")
     };
   });
 
@@ -162,7 +166,8 @@ export async function loadSessionData(supabase: SupabaseClient, teamId: string):
         id: question.id,
         assignedTo: question.assignedTo,
         buzzedBy: question.buzzedBy,
-        correct: question.correct
+        correct: question.correct,
+        missedBy: question.missedBy
       }))
     ),
     session: {

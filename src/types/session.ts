@@ -18,6 +18,8 @@ export type QuizSessionQuestion = {
   buzzedBy: string | null;
   buzzedByName: string | null;
   correct: boolean;
+  missedBy: string[];
+  missedByNames: string[];
 };
 
 export type QuizSession = {
