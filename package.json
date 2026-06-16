@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "import:dry-run": "tsx scripts/import-question-bank.ts examples/ALL_COMPILED.xlsx --dry-run",
-    "import:questions": "tsx scripts/import-question-bank.ts examples/ALL_COMPILED.xlsx --supabase"
+    "import:questions": "tsx scripts/import-question-bank.ts examples/ALL_COMPILED.xlsx --supabase",
+    "create-admins": "tsx --env-file=.env.local scripts/create-admins.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.107.0",

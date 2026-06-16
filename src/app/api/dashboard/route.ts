@@ -136,6 +136,7 @@ export async function GET(request: Request) {
     .from("players")
     .select("id, name, role")
     .eq("team_id", activePlayer.team_id)
+    .eq("is_player", true)
     .order("name");
 
   if (playersError || !players) {

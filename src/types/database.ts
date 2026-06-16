@@ -13,6 +13,7 @@ export type Player = {
   user_id: string | null;
   name: string;
   role: PlayerRole;
+  is_player: boolean;
 };
 
 export type Topic = {

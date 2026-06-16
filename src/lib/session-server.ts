@@ -89,6 +89,7 @@ export async function loadSessionData(supabase: SupabaseClient, teamId: string):
     .from("players")
     .select("id, name, role")
     .eq("team_id", teamId)
+    .eq("is_player", true)
     .order("name");
 
   if (playersError || !players) {
