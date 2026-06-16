@@ -29,9 +29,9 @@ select
   on_topic,
   out_of_topic,
   missed_topic,
-  wrong_buzzes,
   case when own_qs = 0 then 0 else ((on_topic - 0.5 * missed_topic)::double precision / own_qs) * 100 end as defense_score,
   case when others_qs = 0 then 0 else ((2 * out_of_topic - wrong_buzzes)::double precision / others_qs) * 100 end as offense_bonus,
   0.7 * (case when own_qs = 0 then 0 else ((on_topic - 0.5 * missed_topic)::double precision / own_qs) * 100 end)
-    + 0.3 * (case when others_qs = 0 then 0 else ((2 * out_of_topic - wrong_buzzes)::double precision / others_qs) * 100 end) as total_score
+    + 0.3 * (case when others_qs = 0 then 0 else ((2 * out_of_topic - wrong_buzzes)::double precision / others_qs) * 100 end) as total_score,
+  wrong_buzzes
 from question_counts;
