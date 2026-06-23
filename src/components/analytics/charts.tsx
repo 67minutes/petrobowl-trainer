@@ -128,6 +128,7 @@ export function QuizScoreBars({ session }: { session: LatestSessionAnalytics | n
           </div>
           <p className="mt-1 text-xs text-ink-500">
             Defense {score.defenseScore}, offense {score.offenseBonus}, {score.correctAnswers} correct
+            {score.wrongBuzzes > 0 ? `, ${score.wrongBuzzes} wrong buzz${score.wrongBuzzes === 1 ? "" : "es"}` : ""}
           </p>
         </div>
       ))}
