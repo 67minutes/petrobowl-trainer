@@ -115,6 +115,17 @@ export function AnalyticsContent() {
 
   return (
     <div className="space-y-6">
+      <Link
+        href="/coach"
+        className="focus-ring flex items-center justify-between gap-3 rounded border border-ink-200 bg-white px-4 py-3 text-sm transition hover:border-ink-300"
+      >
+        <span className="text-ink-700">
+          <span className="font-semibold text-ink-900">Strategy dashboard</span> — topic strength, offense/defense,
+          readiness, and speed.
+        </span>
+        <ArrowRight aria-hidden className="h-4 w-4 text-ink-500" />
+      </Link>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {data.metrics.map((metric) => (
           <div key={metric.label} className="rounded border border-ink-200 bg-white p-5">

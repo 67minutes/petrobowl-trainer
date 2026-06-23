@@ -5,7 +5,8 @@ import {
   ClipboardList,
   Gauge,
   RadioTower,
-  Settings2
+  Settings2,
+  Target
 } from "lucide-react";
 import { clsx } from "clsx";
 import { SessionMenu } from "@/components/auth/session-menu";
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/drill", label: "Drill", icon: BookOpenCheck },
   { href: "/session", label: "Session", icon: RadioTower },
   { href: "/analytics", label: "Analytics", icon: ClipboardList },
+  { href: "/coach", label: "Coach", icon: Target },
   { href: "/admin", label: "Admin", icon: Settings2 }
 ];
 
