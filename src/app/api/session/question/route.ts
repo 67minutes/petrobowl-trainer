@@ -74,19 +74,19 @@ export async function POST(request: Request) {
     }
 
     if (payload.data.action === "correct" || payload.data.action === "miss") {
-      const { data: buzzedPlayer, error: buzzedPlayerError } = await supabase
-        .from("players")
-        .select("id")
-        .eq("id", payload.data.playerId)
-        .eq("team_id", player.team_id)
+      const { data: participant, error: participantError } = await supabase
+        .from("session_participants")
+        .select("player_id")
+        .eq("session_id", sessionQuestion.session_id)
+        .eq("player_id", payload.data.playerId)
         .maybeSingle();
 
-      if (buzzedPlayerError) {
-        throw new Error(buzzedPlayerError.message);
+      if (participantError) {
+        throw new Error(participantError.message);
       }
 
-      if (!buzzedPlayer) {
-        return NextResponse.json({ error: "Player not found." }, { status: 404 });
+      if (!participant) {
+        return NextResponse.json({ error: "Player is not a participant." }, { status: 400 });
       }
     }
 
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
       throw new Error(updateError.message);
     }
 
-    const data = await loadSessionData(supabase, player.team_id);
+    const data = await loadSessionData(supabase, player.team_id, sessionQuestion.session_id);
     return NextResponse.json({ data });
   } catch (error) {
     return NextResponse.json(

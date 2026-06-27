@@ -28,12 +28,14 @@ type DrillResponseRow = {
 };
 type SessionQuestionRow = {
   id: string;
+  session_id: string;
   question_id: string;
   assigned_to: string | null;
   buzzed_by: string | null;
   correct: boolean;
   missed_by: string[] | null;
 };
+type SessionParticipantRow = { session_id: string; player_id: string };
 
 function todayDateOnly() {
   return new Date().toISOString().slice(0, 10);
@@ -153,18 +155,39 @@ export async function GET(request: Request) {
     // Load questions from all completed sessions, then attach a topic id to each.
     const completedSessionIds = (completedSessions as { id: string }[]).map((session) => session.id);
     let sessionQuestions: CoachSessionQuestion[] = [];
+    const participatingSessionIdsByPlayer = new Map<string, Set<string>>();
+
     if (completedSessionIds.length) {
-      const rawSessionQuestions = await fetchAllPages<SessionQuestionRow>(
-        (from, to) =>
+      const [rawSessionQuestions, { data: sessionParticipants, error: sessionParticipantsError }] =
+        await Promise.all([
+          fetchAllPages<SessionQuestionRow>(
+            (from, to) =>
+              supabase
+                .from("session_questions")
+                .select("id, session_id, question_id, assigned_to, buzzed_by, correct, missed_by")
+                .in("session_id", completedSessionIds)
+                .range(from, to),
+            "Could not load session questions"
+          ),
           supabase
-            .from("session_questions")
-            .select("id, question_id, assigned_to, buzzed_by, correct, missed_by")
+            .from("session_participants")
+            .select("session_id, player_id")
             .in("session_id", completedSessionIds)
-            .range(from, to),
-        "Could not load session questions"
-      );
+        ]);
+
+      if (sessionParticipantsError || !sessionParticipants) {
+        throw new Error(sessionParticipantsError?.message ?? "Could not load session participants.");
+      }
+
+      for (const row of sessionParticipants as SessionParticipantRow[]) {
+        const sessionIds = participatingSessionIdsByPlayer.get(row.player_id) ?? new Set<string>();
+        sessionIds.add(row.session_id);
+        participatingSessionIdsByPlayer.set(row.player_id, sessionIds);
+      }
+
       sessionQuestions = rawSessionQuestions.map((row) => ({
         id: row.id,
+        sessionId: row.session_id,
         topicId: topicByQuestionId.get(row.question_id) ?? null,
         assignedTo: row.assigned_to,
         buzzedBy: row.buzzed_by,
@@ -190,27 +213,32 @@ export async function GET(request: Request) {
     // Role boundary: admins see everyone; a player only ever gets their own row.
     const targetPlayers = isAdmin ? playerRows : playerRows.filter((player) => player.id === viewer.id);
 
-    const coachPlayers: CoachPlayer[] = targetPlayers.map((player) => ({
-      id: player.id,
-      name: player.name,
-      readiness: buildPlayerReadiness({
-        playerId: player.id,
-        assignedQuestionIds: assignedQuestionIdsByPlayer.get(player.id) ?? new Set<string>(),
-        progressRows: coachProgressRows,
-        drillRows: coachDrillRows,
-        today
-      }),
-      speed: buildSpeedProfile(player.id, coachDrillRows),
-      offenseDefense: aggregateOffenseDefense({ id: player.id, name: player.name }, sessionQuestions),
-      topicStrength: buildTopicStrengthRow({
-        playerId: player.id,
-        topics: topicRows,
-        topicByQuestionId,
-        drillRows: coachDrillRows,
-        sessionQuestions,
-        ownedTopicIds: ownedTopicIdsByPlayer.get(player.id) ?? new Set<string>()
-      })
-    }));
+    const coachPlayers: CoachPlayer[] = targetPlayers.map((player) => {
+      const playerSessionIds = participatingSessionIdsByPlayer.get(player.id) ?? new Set<string>();
+      const playerSessionQuestions = sessionQuestions.filter((question) => playerSessionIds.has(question.sessionId));
+
+      return {
+        id: player.id,
+        name: player.name,
+        readiness: buildPlayerReadiness({
+          playerId: player.id,
+          assignedQuestionIds: assignedQuestionIdsByPlayer.get(player.id) ?? new Set<string>(),
+          progressRows: coachProgressRows,
+          drillRows: coachDrillRows,
+          today
+        }),
+        speed: buildSpeedProfile(player.id, coachDrillRows),
+        offenseDefense: aggregateOffenseDefense({ id: player.id, name: player.name }, playerSessionQuestions),
+        topicStrength: buildTopicStrengthRow({
+          playerId: player.id,
+          topics: topicRows,
+          topicByQuestionId,
+          drillRows: coachDrillRows,
+          sessionQuestions: playerSessionQuestions,
+          ownedTopicIds: ownedTopicIdsByPlayer.get(player.id) ?? new Set<string>()
+        })
+      };
+    });
 
     const data: CoachData = {
       viewer: { id: viewer.id, role: viewer.role },

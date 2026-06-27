@@ -24,6 +24,7 @@ export type CoachProgressRow = {
 
 export type CoachSessionQuestion = {
   id: string;
+  sessionId: string;
   topicId: string | null;
   assignedTo: string | null;
   buzzedBy: string | null;

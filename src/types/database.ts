@@ -1,5 +1,7 @@
 export type PlayerRole = "admin" | "player";
 export type SessionStatus = "draft" | "active" | "completed";
+export type DatabaseSessionTopicMode = "topics" | "player_assigned" | "player_assigned_plus";
+export type SessionTopicSource = "manual" | "assigned" | "extra" | "legacy";
 
 export type Team = {
   id: string;
@@ -39,6 +41,31 @@ export type TopicAssignment = {
   player_id: string;
   assigned_at: string;
   unassigned_at: string | null;
+};
+
+export type Session = {
+  id: string;
+  team_id: string;
+  name: string;
+  created_by: string;
+  num_questions: number;
+  status: SessionStatus;
+  topic_mode: DatabaseSessionTopicMode;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type SessionParticipant = {
+  session_id: string;
+  player_id: string;
+  created_at: string;
+};
+
+export type SessionTopic = {
+  session_id: string;
+  topic_id: string;
+  source: SessionTopicSource;
+  created_at: string;
 };
 
 export type CardProgress = {

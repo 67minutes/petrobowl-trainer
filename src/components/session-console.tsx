@@ -1,40 +1,64 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Ban, CheckCircle2, Play, RotateCcw, Square, XCircle } from "lucide-react";
+import { ArrowRight, Check, Play, RefreshCw, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
-import type { QuizSessionData } from "@/types/session";
+import type { SessionTopicMode } from "@/lib/session-pool";
+import type { SessionSetupData, SessionSetupTopic } from "@/types/session";
 
-type SessionResponse = {
-  data?: QuizSessionData;
+type MetadataResponse = {
+  data?: SessionSetupData;
   error?: string;
 };
 
-async function readSessionResponse(response: Response) {
-  const payload = (await response.json()) as SessionResponse;
+type StartResponse = {
+  sessionId?: string;
+  error?: string;
+};
 
-  if (!response.ok || !payload.data) {
-    throw new Error(payload.error ?? "Session unavailable.");
-  }
+const MODE_OPTIONS: { value: SessionTopicMode; label: string }[] = [
+  { value: "topics", label: "Topics" },
+  { value: "playerAssigned", label: "Assigned" },
+  { value: "playerAssignedPlus", label: "Assigned + Extra" }
+];
 
-  return payload.data;
+function toggleId(ids: string[], id: string) {
+  return ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
 }
 
-function isAnswered(question: { buzzedBy: string | null; correct: boolean }) {
-  return question.buzzedBy !== null || !question.correct;
+function groupTopicsByOwner(topics: SessionSetupTopic[]) {
+  const groups = new Map<string, { ownerName: string; topics: SessionSetupTopic[] }>();
+
+  for (const topic of topics) {
+    const key = topic.ownerId ?? "unowned";
+    const current = groups.get(key) ?? { ownerName: topic.ownerName ?? "Unowned", topics: [] };
+    current.topics.push(topic);
+    groups.set(key, current);
+  }
+
+  return [...groups.entries()].map(([ownerId, group]) => ({ ownerId, ...group }));
 }
 
 export function SessionConsole() {
+  const router = useRouter();
   const { session } = useAuth();
-  const [data, setData] = useState<QuizSessionData | null>(null);
-  const [cursor, setCursor] = useState(0);
+  const [data, setData] = useState<SessionSetupData | null>(null);
+  const [initialized, setInitialized] = useState(false);
+  const [name, setName] = useState("");
   const [numQuestions, setNumQuestions] = useState(20);
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
+  const [topicMode, setTopicMode] = useState<SessionTopicMode>("playerAssigned");
+  const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSession = useCallback(async () => {
-    if (!session?.access_token) {
+  const loadMetadata = useCallback(async () => {
+    const token = session?.access_token;
+
+    if (!token) {
       setData(null);
       setLoading(false);
       return;
@@ -44,38 +68,69 @@ export function SessionConsole() {
     setError(null);
 
     try {
-      const response = await fetch("/api/session/current", {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`
-        }
+      const response = await fetch("/api/session/metadata", {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      setData(await readSessionResponse(response));
-    } catch (sessionError) {
-      setError(sessionError instanceof Error ? sessionError.message : "Session unavailable.");
+      const payload = (await response.json()) as MetadataResponse;
+
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error ?? "Session setup unavailable.");
+      }
+
+      setData(payload.data);
+    } catch (metadataError) {
+      setError(metadataError instanceof Error ? metadataError.message : "Session setup unavailable.");
     } finally {
       setLoading(false);
     }
   }, [session?.access_token]);
 
   useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
+    void loadMetadata();
+  }, [loadMetadata]);
 
   useEffect(() => {
-    const questions = data?.session?.questions ?? [];
-    const firstOpen = questions.findIndex((question) => !isAnswered(question));
-
-    if (firstOpen >= 0) {
-      setCursor(firstOpen);
-    } else if (questions.length) {
-      setCursor(questions.length - 1);
-    } else {
-      setCursor(0);
+    if (!data || initialized) {
+      return;
     }
-  }, [data?.session?.id, data?.session?.questions]);
 
-  async function postSession(path: string, body: Record<string, unknown>) {
-    if (!session?.access_token) {
+    setParticipantIds(data.players.map((player) => player.id));
+    setInitialized(true);
+  }, [data, initialized]);
+
+  const preview = useMemo(() => {
+    const participantSet = new Set(participantIds);
+    const assignedTopicIds = new Set(
+      (data?.topics ?? [])
+        .filter((topic) => topic.ownerId && participantSet.has(topic.ownerId))
+        .map((topic) => topic.id)
+    );
+    const topicIds =
+      topicMode === "topics"
+        ? new Set(selectedTopicIds)
+        : topicMode === "playerAssigned"
+          ? assignedTopicIds
+          : new Set([...assignedTopicIds, ...selectedTopicIds]);
+    const topics = (data?.topics ?? []).filter((topic) => topicIds.has(topic.id));
+    const balance = new Map<string, number>();
+
+    for (const topic of topics) {
+      const label = topic.ownerId && participantSet.has(topic.ownerId) ? topic.ownerName ?? "Player" : "Extra";
+      balance.set(label, (balance.get(label) ?? 0) + topic.questionCount);
+    }
+
+    return {
+      topics,
+      topicCount: topics.length,
+      availableQuestions: topics.reduce((sum, topic) => sum + topic.questionCount, 0),
+      balance: [...balance.entries()].sort((left, right) => right[1] - left[1])
+    };
+  }, [data?.topics, participantIds, selectedTopicIds, topicMode]);
+
+  async function startSession() {
+    const token = session?.access_token;
+
+    if (!token) {
       return;
     }
 
@@ -83,50 +138,96 @@ export function SessionConsole() {
     setError(null);
 
     try {
-      const response = await fetch(path, {
+      const response = await fetch("/api/session/start", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+          name: name.trim() || undefined,
+          numQuestions,
+          participantIds,
+          topicMode,
+          topicIds: selectedTopicIds
+        })
       });
-      setData(await readSessionResponse(response));
-    } catch (sessionError) {
-      setError(sessionError instanceof Error ? sessionError.message : "Session unavailable.");
+      const payload = (await response.json()) as StartResponse;
+
+      if (!response.ok || !payload.sessionId) {
+        throw new Error(payload.error ?? "Could not start session.");
+      }
+
+      router.push(`/session/${payload.sessionId}`);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : "Could not start session.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  const activeSession = data?.session ?? null;
-  const questions = activeSession?.questions ?? [];
-  const current = questions[cursor] ?? null;
-  const answeredCount = questions.filter(isAnswered).length;
-  const currentScoreByPlayer = useMemo(
-    () => new Map((data?.scores ?? []).map((score) => [score.playerId, score])),
-    [data?.scores]
-  );
-
   if (loading) {
     return (
       <div className="surface rounded p-5">
-        <h2 className="text-lg font-semibold text-ink-900">Loading session console</h2>
-        <p className="mt-2 text-sm text-ink-500">Checking for an active quizmaster session.</p>
+        <h2 className="text-lg font-semibold text-ink-900">Loading session setup</h2>
+        <p className="mt-2 text-sm text-ink-500">Preparing players, topics, and active sessions.</p>
       </div>
     );
   }
 
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+  if (!data) {
+    return (
       <div className="surface rounded p-5">
-        {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+        <h2 className="text-lg font-semibold text-ink-900">Session setup unavailable</h2>
+        <p className="mt-3 text-sm text-red-600">{error ?? "Could not load session setup."}</p>
+      </div>
+    );
+  }
 
-        {!activeSession ? (
-          <div>
-            <h2 className="text-lg font-semibold text-ink-900">Start buzzer session</h2>
-            <div className="mt-5 flex flex-col gap-3 sm:max-w-xs">
-              <label className="text-sm font-medium text-ink-900" htmlFor="session-size">
+  const topicGroups = groupTopicsByOwner(data.topics);
+  const requiresTopicPicker = topicMode === "topics" || topicMode === "playerAssignedPlus";
+  const startDisabled =
+    submitting ||
+    participantIds.length === 0 ||
+    preview.topicCount === 0 ||
+    numQuestions < 1 ||
+    numQuestions > preview.availableQuestions;
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-5">
+        <section className="surface rounded p-5">
+          <div className="flex flex-col justify-between gap-3 border-b border-ink-200 pb-4 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-semibold text-ink-900">New buzzer session</h2>
+              <p className="mt-1 text-sm text-ink-500">Choose the roster and question pool.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadMetadata()}
+              className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-700 transition hover:border-ink-300"
+            >
+              <RefreshCw aria-hidden className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
+
+          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(280px,1.1fr)]">
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-ink-900" htmlFor="session-name">
+                Session name
+              </label>
+              <input
+                id="session-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Tonight scrimmage"
+                className="focus-ring w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm"
+              />
+
+              <label className="block text-sm font-medium text-ink-900" htmlFor="session-size">
                 Questions
               </label>
               <input
@@ -136,203 +237,173 @@ export function SessionConsole() {
                 max={100}
                 value={numQuestions}
                 onChange={(event) => setNumQuestions(Number(event.target.value))}
-                className="focus-ring rounded border border-ink-200 bg-white px-3 py-2 text-sm"
+                className="focus-ring w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm"
               />
+
+              <div>
+                <p className="text-sm font-medium text-ink-900">Question mode</p>
+                <div className="mt-2 grid grid-cols-3 rounded border border-ink-200 bg-white p-1">
+                  {MODE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setTopicMode(option.value)}
+                      className={`focus-ring rounded px-2 py-2 text-xs font-medium transition ${
+                        topicMode === option.value ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-50"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="button"
-                disabled={submitting}
-                onClick={() => void postSession("/api/session/start", { numQuestions })}
-                className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={startDisabled}
+                onClick={() => void startSession()}
+                className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Play aria-hidden className="h-4 w-4" />
                 Start
               </button>
             </div>
-          </div>
-        ) : current ? (
-          <div>
-            <div className="flex flex-col justify-between gap-4 border-b border-ink-200 pb-4 sm:flex-row sm:items-start">
-              <div>
-                <p className="text-sm text-ink-500">
-                  Question {cursor + 1} of {questions.length}
-                </p>
-                <h2 className="mt-1 text-xl font-semibold text-ink-900">{activeSession.name}</h2>
-              </div>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => void postSession("/api/session/complete", { sessionId: activeSession.id })}
-                className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-700 transition hover:border-signal-500 hover:text-signal-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Square aria-hidden className="h-4 w-4" />
-                Complete
-              </button>
-            </div>
 
-            <div className="py-7">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
-                {current.assignedToName ?? "Unowned"}
-              </p>
-              <p className="mt-3 text-2xl font-semibold leading-9 text-ink-900">{current.question}</p>
-              <p className="mt-4 text-lg text-ink-600">Answer: {current.answer}</p>
-              {current.missedBy.length ? (
-                <p className="mt-3 text-sm text-signal-600">
-                  Locked out: {current.missedByNames.join(", ")}
-                </p>
-              ) : null}
-              {isAnswered(current) ? (
-                <p className="mt-1 text-sm text-ink-500">
-                  {current.correct
-                    ? `${current.buzzedByName} - Correct`
-                    : current.missedBy.length
-                      ? "No correct answer"
-                      : "No Buzz"}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {data?.players.map((player) => {
-                const lockedOut = current.missedBy.includes(player.id);
-                const resolved = isAnswered(current);
-
-                return (
-                  <div key={player.id} className="rounded border border-ink-200 bg-white p-3">
-                    <p className="text-sm font-semibold text-ink-900">
-                      {player.name}
-                      {lockedOut ? (
-                        <span className="ml-2 text-xs font-normal text-signal-600">locked out</span>
-                      ) : null}
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={submitting || resolved || lockedOut}
-                        onClick={() =>
-                          void postSession("/api/session/question", {
-                            action: "correct",
-                            sessionQuestionId: current.id,
-                            playerId: player.id
-                          })
-                        }
-                        className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <CheckCircle2 aria-hidden className="h-4 w-4" />
-                        Correct
-                      </button>
-                      <button
-                        type="button"
-                        disabled={submitting || resolved || lockedOut}
-                        onClick={() =>
-                          void postSession("/api/session/question", {
-                            action: "miss",
-                            sessionQuestionId: current.id,
-                            playerId: player.id
-                          })
-                        }
-                        className="focus-ring inline-flex items-center justify-center gap-2 rounded bg-signal-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <XCircle aria-hidden className="h-4 w-4" />
-                        Miss
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {!isAnswered(current) ? (
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() =>
-                      void postSession("/api/session/question", {
-                        action: "noCorrect",
-                        sessionQuestionId: current.id
-                      })
-                    }
-                    className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-signal-600 transition hover:border-signal-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Ban aria-hidden className="h-4 w-4" />
-                    {current.missedBy.length ? "No correct answer" : "No Buzz"}
-                  </button>
-                ) : null}
-                {isAnswered(current) || current.missedBy.length ? (
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() =>
-                      void postSession("/api/session/question", {
-                        action: "reset",
-                        sessionQuestionId: current.id
-                      })
-                    }
-                    className="focus-ring inline-flex items-center justify-center gap-2 rounded border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-600 transition hover:border-ink-400 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <RotateCcw aria-hidden className="h-4 w-4" />
-                    Reset
-                  </button>
-                ) : null}
-              </div>
+            <div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCursor((value) => Math.max(0, value - 1))}
-                  className="focus-ring rounded border border-ink-200 bg-white p-2 text-ink-600 transition hover:text-ink-900"
-                  title="Previous"
-                >
-                  <ArrowLeft aria-hidden className="h-4 w-4" />
-                  <span className="sr-only">Previous</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCursor((value) => Math.min(questions.length - 1, value + 1))}
-                  className="focus-ring rounded border border-ink-200 bg-white p-2 text-ink-600 transition hover:text-ink-900"
-                  title="Next"
-                >
-                  <ArrowRight aria-hidden className="h-4 w-4" />
-                  <span className="sr-only">Next</span>
-                </button>
+                <Users aria-hidden className="h-5 w-5 text-petrol-600" />
+                <p className="text-sm font-medium text-ink-900">Participants</p>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {data.players.map((player) => {
+                  const selected = participantIds.includes(player.id);
+
+                  return (
+                    <button
+                      key={player.id}
+                      type="button"
+                      onClick={() => setParticipantIds((current) => toggleId(current, player.id))}
+                      className={`focus-ring flex items-center justify-between gap-3 rounded border px-3 py-2 text-left text-sm transition ${
+                        selected
+                          ? "border-petrol-500 bg-petrol-400/15 text-ink-900"
+                          : "border-ink-200 bg-white text-ink-600 hover:border-ink-300"
+                      }`}
+                    >
+                      <span>{player.name}</span>
+                      {selected ? <Check aria-hidden className="h-4 w-4 text-petrol-600" /> : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
-        ) : (
-          <div>
-            <h2 className="text-lg font-semibold text-ink-900">No session questions</h2>
-            <p className="mt-3 text-sm text-ink-500">No questions.</p>
-          </div>
-        )}
-      </div>
+        </section>
 
-      <div className="rounded border border-ink-200 bg-white">
-        <div className="border-b border-ink-200 px-4 py-3">
-          <h3 className="text-sm font-semibold text-ink-900">Scores</h3>
-          {activeSession ? (
-            <p className="mt-1 text-xs text-ink-500">
-              {answeredCount} / {questions.length}
-            </p>
-          ) : null}
-        </div>
-        <div className="divide-y divide-ink-200">
-          {(data?.players ?? []).map((player) => {
-            const score = currentScoreByPlayer.get(player.id);
-
-            return (
-              <div key={player.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-ink-900">{player.name}</p>
-                  <p className="text-xs text-ink-500">
-                    D {score?.defenseScore ?? 0} / O {score?.offenseBonus ?? 0}
+        {requiresTopicPicker ? (
+          <section className="rounded border border-ink-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-ink-900">Topics</h2>
+            <div className="mt-4 space-y-5">
+              {topicGroups.map((group) => (
+                <div key={group.ownerId}>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">
+                    {group.ownerName}
                   </p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {group.topics.map((topic) => {
+                      const selected = selectedTopicIds.includes(topic.id);
+
+                      return (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          onClick={() => setSelectedTopicIds((current) => toggleId(current, topic.id))}
+                          className={`focus-ring flex min-h-16 items-center justify-between gap-3 rounded border px-3 py-2 text-left transition ${
+                            selected
+                              ? "border-petrol-500 bg-petrol-400/15"
+                              : "border-ink-200 bg-white hover:border-ink-300"
+                          }`}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium text-ink-900">{topic.name}</span>
+                            <span className="block text-xs text-ink-500">
+                              {topic.questionCount.toLocaleString()} questions
+                            </span>
+                          </span>
+                          {selected ? <Check aria-hidden className="h-4 w-4 shrink-0 text-petrol-600" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <p className="text-xl font-semibold text-ink-900">{score?.totalScore ?? 0}</p>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
+
+      <aside className="space-y-5">
+        <section className="rounded border border-ink-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-ink-900">Pool preview</h2>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded bg-ink-50 p-3">
+              <p className="text-xs text-ink-500">Players</p>
+              <p className="mt-1 text-xl font-semibold text-ink-900">{participantIds.length}</p>
+            </div>
+            <div className="rounded bg-ink-50 p-3">
+              <p className="text-xs text-ink-500">Topics</p>
+              <p className="mt-1 text-xl font-semibold text-ink-900">{preview.topicCount}</p>
+            </div>
+            <div className="rounded bg-ink-50 p-3">
+              <p className="text-xs text-ink-500">Qs</p>
+              <p className="mt-1 text-xl font-semibold text-ink-900">{preview.availableQuestions}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {preview.balance.length ? (
+              preview.balance.map(([label, count]) => (
+                <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate text-ink-600">{label}</span>
+                  <span className="font-medium text-ink-900">{count.toLocaleString()}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-ink-500">No eligible questions.</p>
+            )}
+          </div>
+
+          {numQuestions > preview.availableQuestions ? (
+            <p className="mt-4 text-sm text-red-600">Question count exceeds the eligible pool.</p>
+          ) : null}
+        </section>
+
+        <section className="rounded border border-ink-200 bg-white">
+          <div className="border-b border-ink-200 px-4 py-3">
+            <h2 className="text-sm font-semibold text-ink-900">Draft and active sessions</h2>
+          </div>
+          <div className="divide-y divide-ink-200">
+            {data.sessions.length ? (
+              data.sessions.map((activeSession) => (
+                <Link
+                  key={activeSession.id}
+                  href={`/session/${activeSession.id}`}
+                  className="focus-ring flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-ink-50"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-ink-900">{activeSession.name}</span>
+                    <span className="mt-1 block truncate text-xs text-ink-500">
+                      {activeSession.participantNames.join(", ")} / {activeSession.numQuestions} questions
+                    </span>
+                  </span>
+                  <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-ink-500" />
+                </Link>
+              ))
+            ) : (
+              <p className="px-4 py-3 text-sm text-ink-500">No open sessions.</p>
+            )}
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }
