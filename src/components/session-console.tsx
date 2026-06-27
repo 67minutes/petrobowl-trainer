@@ -214,7 +214,7 @@ export function SessionConsole() {
 
           {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(280px,1.1fr)]">
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(260px,0.85fr)_minmax(280px,1.15fr)]">
             <div className="space-y-4">
               <label className="block text-sm font-medium text-ink-900" htmlFor="session-name">
                 Session name
@@ -240,33 +240,6 @@ export function SessionConsole() {
                 className="focus-ring w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm"
               />
 
-              <div>
-                <p className="text-sm font-medium text-ink-900">Question mode</p>
-                <div className="mt-2 grid grid-cols-3 rounded border border-ink-200 bg-white p-1">
-                  {MODE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTopicMode(option.value)}
-                      className={`focus-ring rounded px-2 py-2 text-xs font-medium transition ${
-                        topicMode === option.value ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-50"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                disabled={startDisabled}
-                onClick={() => void startSession()}
-                className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Play aria-hidden className="h-4 w-4" />
-                Start
-              </button>
             </div>
 
             <div>
@@ -295,6 +268,33 @@ export function SessionConsole() {
                   );
                 })}
               </div>
+            </div>
+
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-ink-900">Question mode</p>
+              <div className="mt-2 grid gap-1 rounded border border-ink-200 bg-white p-1 sm:grid-cols-3">
+                {MODE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setTopicMode(option.value)}
+                    className={`focus-ring min-h-11 rounded px-3 py-2 text-sm font-medium transition ${
+                      topicMode === option.value ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-50"
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={startDisabled}
+                onClick={() => void startSession()}
+                className="focus-ring mt-4 inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-xs"
+              >
+                <Play aria-hidden className="h-4 w-4" />
+                Start
+              </button>
             </div>
           </div>
         </section>
