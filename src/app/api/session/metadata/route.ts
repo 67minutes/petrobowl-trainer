@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceSupabaseClient } from "@/lib/supabase";
-import { getAuthenticatedPlayer, loadSessionData } from "@/lib/session-server";
+import { getAuthenticatedPlayer, loadSessionSetupData } from "@/lib/session-server";
 
 export const runtime = "nodejs";
 
@@ -11,12 +11,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing session." }, { status: 401 });
   }
 
-  const sessionId = new URL(request.url).searchParams.get("sessionId");
-
-  if (!sessionId) {
-    return NextResponse.json({ error: "Missing session id." }, { status: 400 });
-  }
-
   try {
     const supabase = createServiceSupabaseClient();
     const player = await getAuthenticatedPlayer(supabase, token);
@@ -25,12 +19,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Admin only." }, { status: 403 });
     }
 
-    const data = await loadSessionData(supabase, player.team_id, sessionId);
-
+    const data = await loadSessionSetupData(supabase, player.team_id);
     return NextResponse.json({ data });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Session unavailable." },
+      { error: error instanceof Error ? error.message : "Session setup unavailable." },
       { status: 500 }
     );
   }

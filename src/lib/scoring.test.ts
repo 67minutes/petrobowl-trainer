@@ -75,4 +75,24 @@ describe("calculateSessionScores", () => {
 
     expect(noCorrect[0].defenseScore).toBe(noBuzz[0].defenseScore);
   });
+
+  it("does not score absent owners when only participants are supplied", () => {
+    const scores = calculateSessionScores(
+      [
+        { id: "p1", name: "A" },
+        { id: "p2", name: "B" }
+      ],
+      [{ id: "q1", assignedTo: "p3", buzzedBy: "p1", correct: true, missedBy: [] }]
+    );
+
+    expect(scores).toHaveLength(2);
+    expect(scores.find((score) => score.playerId === "p1")).toMatchObject({
+      outOfTopic: 1,
+      missedTopic: 0
+    });
+    expect(scores.find((score) => score.playerId === "p2")).toMatchObject({
+      outOfTopic: 0,
+      missedTopic: 0
+    });
+  });
 });

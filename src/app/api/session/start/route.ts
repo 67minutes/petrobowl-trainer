@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createServiceSupabaseClient } from "@/lib/supabase";
+import { drawBalancedQuestions } from "@/lib/randomizer";
+import {
+  buildSessionQuestionPool,
+  toDatabaseTopicMode,
+  type SessionPoolAssignment,
+  type SessionPoolTopic,
+  type SessionTopicMode
+} from "@/lib/session-pool";
 import { fetchAllPages, getAuthenticatedPlayer, loadSessionData } from "@/lib/session-server";
+import { createServiceSupabaseClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
 const StartRequest = z.object({
-  numQuestions: z.number().int().min(1).max(100).default(20)
+  name: z.string().trim().min(1).max(80).optional(),
+  numQuestions: z.number().int().min(1).max(100).default(20),
+  participantIds: z.array(z.string().uuid()).min(1),
+  topicMode: z.enum(["topics", "playerAssigned", "playerAssignedPlus"]),
+  topicIds: z.array(z.string().uuid()).optional()
 });
 
-function shuffle<T>(items: T[]) {
-  const copy = [...items];
+type StartQuestionRow = {
+  id: string;
+  topic_id: string;
+};
 
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-  }
-
-  return copy;
+function unique(values: string[]) {
+  return [...new Set(values)];
 }
 
 export async function POST(request: Request) {
@@ -41,16 +51,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admin only." }, { status: 403 });
     }
 
-    const { data: topics, error: topicsError } = await supabase
-      .from("topics")
-      .select("id")
-      .eq("team_id", player.team_id);
+    const participantIds = unique(payload.data.participantIds);
+    const selectedTopicIds = unique(payload.data.topicIds ?? []);
+    const [{ data: players, error: playersError }, { data: topics, error: topicsError }] = await Promise.all([
+      supabase
+        .from("players")
+        .select("id")
+        .eq("team_id", player.team_id)
+        .eq("is_player", true),
+      supabase.from("topics").select("id").eq("team_id", player.team_id)
+    ]);
+
+    if (playersError || !players) {
+      throw new Error(playersError?.message ?? "Could not load players.");
+    }
 
     if (topicsError || !topics) {
       throw new Error(topicsError?.message ?? "Could not load topics.");
     }
 
-    const topicIds = topics.map((topic) => topic.id as string);
+    const teamPlayerIds = new Set((players as { id: string }[]).map((row) => row.id));
+    const invalidParticipant = participantIds.find((participantId) => !teamPlayerIds.has(participantId));
+
+    if (invalidParticipant) {
+      return NextResponse.json({ error: "Participant not found." }, { status: 400 });
+    }
+
+    const topicRows = topics as SessionPoolTopic[];
+    const teamTopicIds = new Set(topicRows.map((topic) => topic.id));
+    const invalidTopic = selectedTopicIds.find((topicId) => !teamTopicIds.has(topicId));
+
+    if (invalidTopic) {
+      return NextResponse.json({ error: "Topic not found." }, { status: 400 });
+    }
+
+    const topicIds = topicRows.map((topic) => topic.id);
     const { data: assignments, error: assignmentsError } = topicIds.length
       ? await supabase
           .from("topic_assignments")
@@ -63,35 +98,54 @@ export async function POST(request: Request) {
       throw new Error(assignmentsError?.message ?? "Could not load assignments.");
     }
 
-    const playerIdByTopic = new Map(assignments.map((assignment) => [assignment.topic_id, assignment.player_id]));
-    const assignedTopicIds = [...playerIdByTopic.keys()];
-
-    if (!assignedTopicIds.length) {
-      return NextResponse.json({ error: "No assigned questions." }, { status: 400 });
-    }
-
-    const questions = await fetchAllPages<{ id: string; topic_id: string }>(
+    const questions = await fetchAllPages<StartQuestionRow>(
       (from, to) =>
         supabase
           .from("questions")
           .select("id, topic_id")
-          .in("topic_id", assignedTopicIds)
+          .in("topic_id", topicIds.length ? topicIds : ["00000000-0000-0000-0000-000000000000"])
           .range(from, to),
       "Could not load questions"
     );
-    const selectedQuestions = shuffle(questions).slice(0, payload.data.numQuestions);
+    const pool = buildSessionQuestionPool({
+      topicMode: payload.data.topicMode as SessionTopicMode,
+      participantIds,
+      selectedTopicIds,
+      topics: topicRows,
+      assignments: (assignments as { topic_id: string; player_id: string }[]).map<SessionPoolAssignment>(
+        (assignment) => ({
+          topicId: assignment.topic_id,
+          playerId: assignment.player_id
+        })
+      ),
+      questions: questions.map((question) => ({
+        id: question.id,
+        topicId: question.topic_id
+      }))
+    });
 
-    if (!selectedQuestions.length) {
-      return NextResponse.json({ error: "No assigned questions." }, { status: 400 });
+    if (payload.data.numQuestions > pool.questions.length) {
+      return NextResponse.json(
+        { error: `Only ${pool.questions.length} eligible question${pool.questions.length === 1 ? "" : "s"} available.` },
+        { status: 400 }
+      );
     }
+
+    const selectedQuestions = drawBalancedQuestions(pool.questions, {
+      count: payload.data.numQuestions
+    });
+    const sessionName =
+      payload.data.name?.trim() ??
+      `Session ${new Date().toLocaleString("en-US", { hour12: false })}`;
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .insert({
         team_id: player.team_id,
-        name: `Session ${new Date().toLocaleString("en-US", { hour12: false })}`,
+        name: sessionName,
         created_by: player.id,
         num_questions: selectedQuestions.length,
+        topic_mode: toDatabaseTopicMode(payload.data.topicMode),
         status: "active"
       })
       .select("id")
@@ -101,21 +155,42 @@ export async function POST(request: Request) {
       throw new Error(sessionError?.message ?? "Could not create session.");
     }
 
-    const rows = selectedQuestions.map((question, index) => ({
-      session_id: session.id,
+    const sessionId = String(session.id);
+    const participantRows = participantIds.map((participantId) => ({
+      session_id: sessionId,
+      player_id: participantId
+    }));
+    const topicRowsForInsert = [...pool.topicSources.entries()].map(([topicId, source]) => ({
+      session_id: sessionId,
+      topic_id: topicId,
+      source
+    }));
+    const questionRows = selectedQuestions.map((question, index) => ({
+      session_id: sessionId,
       question_id: question.id,
       question_order: index + 1,
-      assigned_to: playerIdByTopic.get(question.topic_id) ?? null
+      assigned_to: question.assignedTo
     }));
-    const { error: questionsError } = await supabase.from("session_questions").insert(rows);
 
-    if (questionsError) {
-      await supabase.from("sessions").delete().eq("id", session.id);
-      throw new Error(questionsError.message);
+    const [{ error: participantInsertError }, { error: topicInsertError }, { error: questionInsertError }] =
+      await Promise.all([
+        supabase.from("session_participants").insert(participantRows),
+        supabase.from("session_topics").insert(topicRowsForInsert),
+        supabase.from("session_questions").insert(questionRows)
+      ]);
+
+    if (participantInsertError || topicInsertError || questionInsertError) {
+      await supabase.from("sessions").delete().eq("id", sessionId);
+      throw new Error(
+        participantInsertError?.message ??
+          topicInsertError?.message ??
+          questionInsertError?.message ??
+          "Could not create session."
+      );
     }
 
-    const data = await loadSessionData(supabase, player.team_id);
-    return NextResponse.json({ data });
+    const data = await loadSessionData(supabase, player.team_id, sessionId);
+    return NextResponse.json({ data, sessionId });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not start session." },

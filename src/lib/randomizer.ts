@@ -1,6 +1,7 @@
 export type RandomizerQuestion = {
   id: string;
   assignedTo: string | null;
+  balanceGroup?: string | null;
 };
 
 export type RandomizerOptions = {
@@ -29,13 +30,13 @@ function shuffle<T>(items: T[], seed = Date.now()) {
   return copy;
 }
 
-export function drawBalancedQuestions(
-  questions: RandomizerQuestion[],
+export function drawBalancedQuestions<T extends RandomizerQuestion>(
+  questions: T[],
   options: RandomizerOptions
 ) {
-  const groups = new Map<string, RandomizerQuestion[]>();
+  const groups = new Map<string, T[]>();
   for (const question of questions) {
-    const key = question.assignedTo ?? "unowned";
+    const key = question.balanceGroup ?? question.assignedTo ?? "unowned";
     groups.set(key, [...(groups.get(key) ?? []), question]);
   }
 
@@ -44,7 +45,7 @@ export function drawBalancedQuestions(
     questions: shuffle(group, (options.seed ?? Date.now()) + index)
   }));
 
-  const drawn: RandomizerQuestion[] = [];
+  const drawn: T[] = [];
   let cursor = 0;
 
   while (drawn.length < options.count && shuffledGroups.some((group) => group.questions.length)) {

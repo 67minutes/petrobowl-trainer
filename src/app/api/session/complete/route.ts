@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       throw new Error(error.message);
     }
 
-    const data = await loadSessionData(supabase, player.team_id);
+    const data = await loadSessionData(supabase, player.team_id, payload.data.sessionId);
     return NextResponse.json({ data });
   } catch (error) {
     return NextResponse.json(

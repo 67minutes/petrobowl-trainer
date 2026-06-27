@@ -69,6 +69,10 @@ type SessionQuestionRow = {
   missed_by: string[] | null;
 };
 
+type SessionParticipantRow = {
+  player_id: string;
+};
+
 function todayDateOnly() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -118,18 +122,32 @@ async function loadLatestSession(input: {
     return null;
   }
 
-  const sessionQuestions = await fetchAllPages<SessionQuestionRow>(
-    (from, to) =>
-      input.supabase
-        .from("session_questions")
-        .select("id, question_id, assigned_to, buzzed_by, correct, missed_by")
-        .eq("session_id", rawLatest.id)
-        .range(from, to),
-    "Could not load latest session questions"
-  );
+  const [{ data: participants, error: participantsError }, sessionQuestions] = await Promise.all([
+    input.supabase
+      .from("session_participants")
+      .select("player_id")
+      .eq("session_id", rawLatest.id),
+    fetchAllPages<SessionQuestionRow>(
+      (from, to) =>
+        input.supabase
+          .from("session_questions")
+          .select("id, question_id, assigned_to, buzzed_by, correct, missed_by")
+          .eq("session_id", rawLatest.id)
+          .range(from, to),
+      "Could not load latest session questions"
+    )
+  ]);
+
+  if (participantsError || !participants) {
+    throw new Error(participantsError?.message ?? "Could not load latest session participants.");
+  }
+
+  const participantIds = new Set((participants as SessionParticipantRow[]).map((participant) => participant.player_id));
+  const sessionPlayers = input.players.filter((player) => participantIds.has(player.id));
+  const activePlayerParticipated = participantIds.has(input.activePlayerId);
   const answeredQuestions = sessionQuestions.filter(isAnswered);
   const scores = calculateSessionScores(
-    input.players.map((player) => ({ id: player.id, name: player.name })),
+    sessionPlayers.map((player) => ({ id: player.id, name: player.name })),
     answeredQuestions.map((question) => ({
       id: question.id,
       assignedTo: question.assigned_to,
@@ -152,14 +170,18 @@ async function loadLatestSession(input: {
       topicMisses.set(topic, current);
     }
 
-    if (question.assigned_to === input.activePlayerId && (question.buzzed_by !== input.activePlayerId || !question.correct)) {
+    if (
+      activePlayerParticipated &&
+      question.assigned_to === input.activePlayerId &&
+      (question.buzzed_by !== input.activePlayerId || !question.correct)
+    ) {
       followUps.push({
         questionId: question.question_id,
         topic,
         term: bankQuestion?.answer ?? "Term",
         reason: question.buzzed_by === null ? "own-no-buzz" : "own-miss"
       });
-    } else if (question.buzzed_by === input.activePlayerId && !question.correct) {
+    } else if (activePlayerParticipated && question.buzzed_by === input.activePlayerId && !question.correct) {
       followUps.push({
         questionId: question.question_id,
         topic,
