@@ -14,10 +14,15 @@ export type SessionPoolAssignment = {
 export type SessionPoolQuestion = {
   id: string;
   topicId: string;
+  termKey: string;
 };
 
-export type EligibleSessionQuestion = SessionPoolQuestion & {
+export type EligibleSessionQuestion = {
+  id: string;
+  topicId: string;
+  termKey: string;
   assignedTo: string | null;
+  owners: string[];
   balanceGroup: string;
 };
 
@@ -73,10 +78,14 @@ export function buildSessionQuestionPool(input: {
     throw new Error("Selected topic not found.");
   }
 
-  const ownerByTopicId = new Map<string, string>();
+  const ownersByTopicId = new Map<string, string[]>();
   for (const assignment of input.assignments) {
     if (knownTopicIds.has(assignment.topicId)) {
-      ownerByTopicId.set(assignment.topicId, assignment.playerId);
+      const current = ownersByTopicId.get(assignment.topicId) ?? [];
+      if (!current.includes(assignment.playerId)) {
+        current.push(assignment.playerId);
+      }
+      ownersByTopicId.set(assignment.topicId, current);
     }
   }
 
@@ -88,8 +97,8 @@ export function buildSessionQuestionPool(input: {
     }
   } else {
     for (const topic of input.topics) {
-      const ownerId = ownerByTopicId.get(topic.id);
-      if (ownerId && participantSet.has(ownerId)) {
+      const owners = ownersByTopicId.get(topic.id) ?? [];
+      if (owners.some((ownerId) => participantSet.has(ownerId))) {
         topicSources.set(topic.id, "assigned");
       }
     }
@@ -107,17 +116,34 @@ export function buildSessionQuestionPool(input: {
     throw new Error("Select at least one topic.");
   }
 
-  const questions = input.questions
-    .filter((question) => topicSources.has(question.topicId))
-    .map<EligibleSessionQuestion>((question) => {
-      const assignedTo = ownerByTopicId.get(question.topicId) ?? null;
+  const eligible = input.questions.filter((question) => topicSources.has(question.topicId));
 
-      return {
-        ...question,
-        assignedTo,
-        balanceGroup: assignedTo && participantSet.has(assignedTo) ? assignedTo : "extra"
-      };
-    });
+  // Collapse multi-home duplicates: one question per unique term_key, whose owner
+  // set is the union of owners across the term's topics, intersected with participants.
+  const groups = new Map<string, { representative: SessionPoolQuestion; owners: Set<string> }>();
+  for (const question of eligible) {
+    const group = groups.get(question.termKey) ?? { representative: question, owners: new Set<string>() };
+    for (const ownerId of ownersByTopicId.get(question.topicId) ?? []) {
+      if (participantSet.has(ownerId)) {
+        group.owners.add(ownerId);
+      }
+    }
+    groups.set(question.termKey, group);
+  }
+
+  const questions = [...groups.values()].map<EligibleSessionQuestion>((group) => {
+    const owners = [...group.owners];
+    const primaryOwner = owners[0] ?? null;
+
+    return {
+      id: group.representative.id,
+      topicId: group.representative.topicId,
+      termKey: group.representative.termKey,
+      assignedTo: primaryOwner,
+      owners,
+      balanceGroup: primaryOwner ?? "extra"
+    };
+  });
 
   if (!questions.length) {
     throw new Error("No eligible questions.");
