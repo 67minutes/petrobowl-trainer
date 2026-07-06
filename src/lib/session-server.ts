@@ -38,6 +38,7 @@ type RawSessionQuestion = {
   question_id: string;
   question_order: number;
   assigned_to: string | null;
+  owners: string[] | null;
   buzzed_by: string | null;
   correct: boolean;
   missed_by: string[] | null;
@@ -204,7 +205,7 @@ export async function loadSessionData(
 
   const { data: questionRows, error: questionsError } = await supabase
     .from("session_questions")
-    .select("id, question_id, question_order, assigned_to, buzzed_by, correct, missed_by, questions(question, answer, topic_id, topics(name))")
+    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, topic_id, topics(name))")
     .eq("session_id", rawSession.id)
     .order("question_order");
 
@@ -216,6 +217,8 @@ export async function loadSessionData(
     const question = readRelation(row.questions);
     const topic = question ? readRelation(question.topics) : null;
     const missedBy = row.missed_by ?? [];
+    const owners =
+      row.owners && row.owners.length > 0 ? row.owners : row.assigned_to ? [row.assigned_to] : [];
 
     return {
       id: row.id,
@@ -225,8 +228,10 @@ export async function loadSessionData(
       topicName: topic?.name ?? null,
       question: question?.question ?? "",
       answer: question?.answer ?? "",
-      assignedTo: row.assigned_to,
-      assignedToName: row.assigned_to ? playerNameById.get(row.assigned_to) ?? null : null,
+      assignedTo: owners[0] ?? null,
+      assignedToName: owners[0] ? playerNameById.get(owners[0]) ?? null : null,
+      owners,
+      ownerNames: owners.map((id) => playerNameById.get(id) ?? "Unknown"),
       buzzedBy: row.buzzed_by,
       buzzedByName: row.buzzed_by ? playerNameById.get(row.buzzed_by) ?? null : null,
       correct: row.correct,
@@ -243,7 +248,7 @@ export async function loadSessionData(
       sessionPlayers,
       answeredQuestions.map((question) => ({
         id: question.id,
-        assignedTo: question.assignedTo,
+        owners: question.owners,
         buzzedBy: question.buzzedBy,
         correct: question.correct,
         missedBy: question.missedBy
@@ -282,6 +287,7 @@ export async function loadSessionSetupData(
       .from("topics")
       .select("id, name, display_order")
       .eq("team_id", teamId)
+      .is("retired_at", null)
       .order("display_order"),
     supabase.from("topic_assignments").select("topic_id, player_id").is("unassigned_at", null),
     fetchAllPages<RawQuestion>(
@@ -313,7 +319,14 @@ export async function loadSessionSetupData(
   const assignmentRows = (assignments as RawAssignment[]).filter((assignment) =>
     teamTopicIds.has(assignment.topic_id)
   );
-  const ownerByTopicId = new Map(assignmentRows.map((assignment) => [assignment.topic_id, assignment.player_id]));
+  const ownersByTopicId = new Map<string, string[]>();
+  for (const assignment of assignmentRows) {
+    const current = ownersByTopicId.get(assignment.topic_id) ?? [];
+    if (!current.includes(assignment.player_id)) {
+      current.push(assignment.player_id);
+    }
+    ownersByTopicId.set(assignment.topic_id, current);
+  }
   const questionCountByTopicId = new Map<string, number>();
 
   for (const question of questionRows) {
@@ -384,14 +397,14 @@ export async function loadSessionSetupData(
   return {
     players: activePlayers,
     topics: topicRows.map((topic) => {
-      const ownerId = ownerByTopicId.get(topic.id) ?? null;
+      const ownerIds = ownersByTopicId.get(topic.id) ?? [];
 
       return {
         id: topic.id,
         name: topic.name,
         displayOrder: topic.display_order,
-        ownerId,
-        ownerName: ownerId ? playerNameById.get(ownerId) ?? null : null,
+        ownerIds,
+        ownerNames: ownerIds.map((id) => playerNameById.get(id) ?? "Unknown"),
         questionCount: questionCountByTopicId.get(topic.id) ?? 0
       };
     }),
