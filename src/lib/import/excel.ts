@@ -1,5 +1,5 @@
 import readExcelFile from "read-excel-file/node";
-import { TOPIC_ASSIGNMENTS } from "@/lib/constants";
+import { TOPIC_OWNERS } from "@/lib/constants";
 
 export type ParsedQuestion = {
   question: string;
@@ -202,7 +202,7 @@ export async function parseQuestionBank(
 
     topics.push({
       name: sheetName,
-      assignedTo: TOPIC_ASSIGNMENTS[sheetName] ?? null,
+      assignedTo: TOPIC_OWNERS[sheetName]?.[0] ?? null,
       questions
     });
   }

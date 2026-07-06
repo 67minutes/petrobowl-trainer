@@ -1,7 +1,7 @@
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { ImportPanel } from "@/components/import-panel";
-import { SEED_PLAYERS, UNOWNED_TOPICS } from "@/lib/constants";
+import { SEED_PLAYERS } from "@/lib/constants";
 
 export default function AdminPage() {
   return (
@@ -24,10 +24,6 @@ export default function AdminPage() {
                   <p className="mt-1 text-xs leading-5 text-ink-500">{player.topics.join(", ")}</p>
                 </div>
               ))}
-              <div className="py-3">
-                <p className="text-sm font-semibold text-ink-900">Unowned</p>
-                <p className="mt-1 text-xs leading-5 text-ink-500">{UNOWNED_TOPICS.join(", ")}</p>
-              </div>
             </div>
           </section>
         </div>
