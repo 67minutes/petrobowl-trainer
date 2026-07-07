@@ -26,7 +26,7 @@ export type CoachSessionQuestion = {
   id: string;
   sessionId: string;
   topicId: string | null;
-  assignedTo: string | null;
+  owners: string[];
   buzzedBy: string | null;
   correct: boolean;
   missedBy: string[];
@@ -229,7 +229,7 @@ export function aggregateOffenseDefense(
     [player],
     resolved.map((question) => ({
       id: question.id,
-      assignedTo: question.assignedTo,
+      owners: question.owners,
       buzzedBy: question.buzzedBy,
       correct: question.correct,
       missedBy: question.missedBy

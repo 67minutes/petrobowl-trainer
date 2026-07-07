@@ -31,6 +31,7 @@ type SessionQuestionRow = {
   session_id: string;
   question_id: string;
   assigned_to: string | null;
+  owners: string[] | null;
   buzzed_by: string | null;
   correct: boolean;
   missed_by: string[] | null;
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
         .from("topics")
         .select("id, name, display_order")
         .eq("team_id", viewer.team_id)
+        .is("retired_at", null)
         .order("display_order"),
       supabase.from("topic_assignments").select("topic_id, player_id").is("unassigned_at", null),
       fetchAllPages<QuestionRow>(
@@ -164,7 +166,7 @@ export async function GET(request: Request) {
             (from, to) =>
               supabase
                 .from("session_questions")
-                .select("id, session_id, question_id, assigned_to, buzzed_by, correct, missed_by")
+                .select("id, session_id, question_id, assigned_to, owners, buzzed_by, correct, missed_by")
                 .in("session_id", completedSessionIds)
                 .range(from, to),
             "Could not load session questions"
@@ -189,7 +191,12 @@ export async function GET(request: Request) {
         id: row.id,
         sessionId: row.session_id,
         topicId: topicByQuestionId.get(row.question_id) ?? null,
-        assignedTo: row.assigned_to,
+        owners:
+          row.owners && row.owners.length > 0
+            ? row.owners
+            : row.assigned_to
+              ? [row.assigned_to]
+              : [],
         buzzedBy: row.buzzed_by,
         correct: row.correct,
         missedBy: row.missed_by ?? []

@@ -157,7 +157,7 @@ export function SessionRunner({ sessionId }: { sessionId: string }) {
 
               <div className="py-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
-                  {current.topicName ?? "Topic"} / {current.assignedToName ?? "Unowned"}
+                  {current.topicName ?? "Topic"} / {current.ownerNames.length ? current.ownerNames.join(" & ") : "Unowned"}
                 </p>
                 <p className="mt-3 text-2xl font-semibold leading-9 text-ink-900">{current.question}</p>
                 <p className="mt-4 text-lg text-ink-600">Answer: {current.answer}</p>

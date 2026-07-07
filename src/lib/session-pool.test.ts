@@ -8,11 +8,11 @@ const assignments = [
   { topicId: "t3", playerId: "p3" }
 ];
 const questions = [
-  { id: "q1", topicId: "t1" },
-  { id: "q2", topicId: "t1" },
-  { id: "q3", topicId: "t2" },
-  { id: "q4", topicId: "t3" },
-  { id: "q5", topicId: "t4" }
+  { id: "q1", topicId: "t1", termKey: "alpha" },
+  { id: "q2", topicId: "t1", termKey: "beta" },
+  { id: "q3", topicId: "t2", termKey: "gamma" },
+  { id: "q4", topicId: "t3", termKey: "delta" },
+  { id: "q5", topicId: "t4", termKey: "epsilon" }
 ];
 
 describe("buildSessionQuestionPool", () => {
@@ -27,7 +27,9 @@ describe("buildSessionQuestionPool", () => {
     });
 
     expect([...pool.topicSources.entries()]).toEqual([["t2", "manual"]]);
-    expect(pool.questions).toEqual([{ id: "q3", topicId: "t2", assignedTo: "p2", balanceGroup: "p2" }]);
+    expect(pool.questions).toEqual([
+      { id: "q3", topicId: "t2", termKey: "gamma", assignedTo: "p2", owners: ["p2"], balanceGroup: "p2" }
+    ]);
   });
 
   it("builds a player-assigned pool from selected participants", () => {
@@ -76,7 +78,7 @@ describe("buildSessionQuestionPool", () => {
     });
 
     const extraQuestion = pool.questions.find((question) => question.id === "q4");
-    expect(extraQuestion).toMatchObject({ assignedTo: "p3", balanceGroup: "extra" });
+    expect(extraQuestion).toMatchObject({ assignedTo: null, owners: [], balanceGroup: "extra" });
   });
 
   it("deduplicates repeated topics", () => {
@@ -91,6 +93,41 @@ describe("buildSessionQuestionPool", () => {
 
     expect([...pool.topicSources.keys()]).toEqual(["t1"]);
     expect(pool.questions.map((question) => question.id)).toEqual(["q1", "q2"]);
+  });
+
+  it("collapses duplicate terms across topics into one owner-set question", () => {
+    const pool = buildSessionQuestionPool({
+      topicMode: "playerAssigned",
+      participantIds: ["p1", "p2"],
+      selectedTopicIds: [],
+      topics,
+      assignments,
+      questions: [
+        { id: "q1", topicId: "t1", termKey: "shared" }, // owner p1
+        { id: "q3", topicId: "t2", termKey: "shared" } // owner p2
+      ]
+    });
+
+    expect(pool.questions).toHaveLength(1);
+    const [question] = pool.questions;
+    expect([...question.owners].sort()).toEqual(["p1", "p2"]);
+    expect(["q1", "q3"]).toContain(question.id);
+  });
+
+  it("derives owners for a co-owned topic (two assignments, one topic)", () => {
+    const pool = buildSessionQuestionPool({
+      topicMode: "playerAssigned",
+      participantIds: ["p1", "p2"],
+      selectedTopicIds: [],
+      topics: [{ id: "t1" }],
+      assignments: [
+        { topicId: "t1", playerId: "p1" },
+        { topicId: "t1", playerId: "p2" }
+      ],
+      questions: [{ id: "q1", topicId: "t1", termKey: "co" }]
+    });
+
+    expect([...pool.questions[0].owners].sort()).toEqual(["p1", "p2"]);
   });
 
   it("rejects empty participants, topics, and question pools", () => {

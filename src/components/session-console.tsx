@@ -32,10 +32,18 @@ function groupTopicsByOwner(topics: SessionSetupTopic[]) {
   const groups = new Map<string, { ownerName: string; topics: SessionSetupTopic[] }>();
 
   for (const topic of topics) {
-    const key = topic.ownerId ?? "unowned";
-    const current = groups.get(key) ?? { ownerName: topic.ownerName ?? "Unowned", topics: [] };
-    current.topics.push(topic);
-    groups.set(key, current);
+    if (topic.ownerIds.length === 0) {
+      const current = groups.get("unowned") ?? { ownerName: "Unowned", topics: [] };
+      current.topics.push(topic);
+      groups.set("unowned", current);
+      continue;
+    }
+    // A co-owned topic appears under each of its owners.
+    topic.ownerIds.forEach((ownerId, index) => {
+      const current = groups.get(ownerId) ?? { ownerName: topic.ownerNames[index] ?? "Player", topics: [] };
+      current.topics.push(topic);
+      groups.set(ownerId, current);
+    });
   }
 
   return [...groups.entries()].map(([ownerId, group]) => ({ ownerId, ...group }));
@@ -102,7 +110,7 @@ export function SessionConsole() {
     const participantSet = new Set(participantIds);
     const assignedTopicIds = new Set(
       (data?.topics ?? [])
-        .filter((topic) => topic.ownerId && participantSet.has(topic.ownerId))
+        .filter((topic) => topic.ownerIds.some((id) => participantSet.has(id)))
         .map((topic) => topic.id)
     );
     const topicIds =
@@ -115,7 +123,10 @@ export function SessionConsole() {
     const balance = new Map<string, number>();
 
     for (const topic of topics) {
-      const label = topic.ownerId && participantSet.has(topic.ownerId) ? topic.ownerName ?? "Player" : "Extra";
+      // Attribute the topic to its first participating owner (matches the pool's
+      // primary-owner balance group); non-participant-owned topics count as extra.
+      const primaryOwnerIndex = topic.ownerIds.findIndex((id) => participantSet.has(id));
+      const label = primaryOwnerIndex >= 0 ? topic.ownerNames[primaryOwnerIndex] ?? "Player" : "Extra";
       balance.set(label, (balance.get(label) ?? 0) + topic.questionCount);
     }
 
@@ -214,7 +225,7 @@ export function SessionConsole() {
 
           {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(280px,1.1fr)]">
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(260px,0.85fr)_minmax(280px,1.15fr)]">
             <div className="space-y-4">
               <label className="block text-sm font-medium text-ink-900" htmlFor="session-name">
                 Session name
@@ -240,33 +251,6 @@ export function SessionConsole() {
                 className="focus-ring w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm"
               />
 
-              <div>
-                <p className="text-sm font-medium text-ink-900">Question mode</p>
-                <div className="mt-2 grid grid-cols-3 rounded border border-ink-200 bg-white p-1">
-                  {MODE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTopicMode(option.value)}
-                      className={`focus-ring rounded px-2 py-2 text-xs font-medium transition ${
-                        topicMode === option.value ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-50"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                disabled={startDisabled}
-                onClick={() => void startSession()}
-                className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Play aria-hidden className="h-4 w-4" />
-                Start
-              </button>
             </div>
 
             <div>
@@ -295,6 +279,33 @@ export function SessionConsole() {
                   );
                 })}
               </div>
+            </div>
+
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-ink-900">Question mode</p>
+              <div className="mt-2 grid gap-1 rounded border border-ink-200 bg-white p-1 sm:grid-cols-3">
+                {MODE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setTopicMode(option.value)}
+                    className={`focus-ring min-h-11 rounded px-3 py-2 text-sm font-medium transition ${
+                      topicMode === option.value ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-50"
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={startDisabled}
+                onClick={() => void startSession()}
+                className="focus-ring mt-4 inline-flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-xs"
+              >
+                <Play aria-hidden className="h-4 w-4" />
+                Start
+              </button>
             </div>
           </div>
         </section>

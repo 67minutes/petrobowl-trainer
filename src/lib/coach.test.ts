@@ -27,9 +27,9 @@ describe("buildTopicStrengthRow", () => {
     // study on t1: 2 correct of 3 = 66.67%
     const sessionQuestions: CoachSessionQuestion[] = [
       // buzz on t1: p1 correct
-      { id: "s1", sessionId: "session-1", topicId: "t1", assignedTo: "p1", buzzedBy: "p1", correct: true, missedBy: [] },
+      { id: "s1", sessionId: "session-1", topicId: "t1", owners: ["p1"], buzzedBy: "p1", correct: true, missedBy: [] },
       // buzz on t1: p1 missed
-      { id: "s2", sessionId: "session-1", topicId: "t1", assignedTo: "p2", buzzedBy: "p2", correct: true, missedBy: ["p1"] }
+      { id: "s2", sessionId: "session-1", topicId: "t1", owners: ["p2"], buzzedBy: "p2", correct: true, missedBy: ["p1"] }
     ];
 
     const row = buildTopicStrengthRow({
@@ -82,7 +82,7 @@ describe("buildTopicStrengthRow", () => {
         { playerId: "p2", questionId: "q1", correct: true, responseTimeMs: 1000, reviewedAt: "2026-06-20" }
       ],
       sessionQuestions: [
-        { id: "s1", sessionId: "session-1", topicId: "t1", assignedTo: "p2", buzzedBy: "p2", correct: true, missedBy: [] }
+        { id: "s1", sessionId: "session-1", topicId: "t1", owners: ["p2"], buzzedBy: "p2", correct: true, missedBy: [] }
       ],
       ownedTopicIds: new Set()
     });
@@ -160,10 +160,10 @@ describe("quadrantLabel", () => {
 describe("aggregateOffenseDefense", () => {
   it("aggregates resolved questions across the season and assigns a label", () => {
     const questions: CoachSessionQuestion[] = [
-      { id: "q1", sessionId: "session-1", topicId: "t1", assignedTo: "p1", buzzedBy: "p1", correct: true, missedBy: [] },
-      { id: "q2", sessionId: "session-1", topicId: "t1", assignedTo: "p1", buzzedBy: "p1", correct: true, missedBy: [] },
+      { id: "q1", sessionId: "session-1", topicId: "t1", owners: ["p1"], buzzedBy: "p1", correct: true, missedBy: [] },
+      { id: "q2", sessionId: "session-1", topicId: "t1", owners: ["p1"], buzzedBy: "p1", correct: true, missedBy: [] },
       // unresolved open question should be excluded (no penalty to owner)
-      { id: "q3", sessionId: "session-1", topicId: "t2", assignedTo: "p1", buzzedBy: null, correct: true, missedBy: [] }
+      { id: "q3", sessionId: "session-1", topicId: "t2", owners: ["p1"], buzzedBy: null, correct: true, missedBy: [] }
     ];
     const result = aggregateOffenseDefense({ id: "p1", name: "A" }, questions);
     expect(result).toMatchObject({ onTopic: 2, ownQuestions: 2, defenseScore: 100 });

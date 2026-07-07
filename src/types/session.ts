@@ -18,6 +18,8 @@ export type QuizSessionQuestion = {
   answer: string;
   assignedTo: string | null;
   assignedToName: string | null;
+  owners: string[];
+  ownerNames: string[];
   buzzedBy: string | null;
   buzzedByName: string | null;
   correct: boolean;
@@ -46,8 +48,8 @@ export type SessionSetupTopic = {
   id: string;
   name: string;
   displayOrder: number;
-  ownerId: string | null;
-  ownerName: string | null;
+  ownerIds: string[];
+  ownerNames: string[];
   questionCount: number;
 };
 
