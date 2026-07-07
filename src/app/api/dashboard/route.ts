@@ -148,7 +148,8 @@ export async function GET(request: Request) {
   const { data: topics, error: topicsError } = await supabase
     .from("topics")
     .select("id")
-    .eq("team_id", activePlayer.team_id);
+    .eq("team_id", activePlayer.team_id)
+    .is("retired_at", null);
 
   if (topicsError) {
     return NextResponse.json({ error: topicsError.message }, { status: 500 });
@@ -167,11 +168,13 @@ export async function GET(request: Request) {
   }
 
   const assignedTopicIds = new Set(assignments?.map((assignment) => assignment.topic_id) ?? []);
-  const playerIdByTopic = new Map<string, string>();
+  const ownerIdsByTopic = new Map<string, string[]>();
   const topicCountByPlayer = new Map<string, number>();
 
   for (const assignment of assignments ?? []) {
-    playerIdByTopic.set(assignment.topic_id, assignment.player_id);
+    const owners = ownerIdsByTopic.get(assignment.topic_id) ?? [];
+    owners.push(assignment.player_id);
+    ownerIdsByTopic.set(assignment.topic_id, owners);
     topicCountByPlayer.set(assignment.player_id, (topicCountByPlayer.get(assignment.player_id) ?? 0) + 1);
   }
 
@@ -190,9 +193,12 @@ export async function GET(request: Request) {
 
   for (const topicId of allTopicIds) {
     const questionCount = questionCountByTopic.get(topicId) ?? 0;
-    const ownerId = playerIdByTopic.get(topicId);
-    if (ownerId) {
-      assignedQuestionsByPlayer.set(ownerId, (assignedQuestionsByPlayer.get(ownerId) ?? 0) + questionCount);
+    const ownerIds = ownerIdsByTopic.get(topicId) ?? [];
+    if (ownerIds.length) {
+      // A co-owned topic's questions are attributed to each owner (both drill them).
+      for (const ownerId of ownerIds) {
+        assignedQuestionsByPlayer.set(ownerId, (assignedQuestionsByPlayer.get(ownerId) ?? 0) + questionCount);
+      }
     } else if (!assignedTopicIds.has(topicId)) {
       unownedQuestions += questionCount;
     }

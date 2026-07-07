@@ -32,10 +32,18 @@ function groupTopicsByOwner(topics: SessionSetupTopic[]) {
   const groups = new Map<string, { ownerName: string; topics: SessionSetupTopic[] }>();
 
   for (const topic of topics) {
-    const key = topic.ownerId ?? "unowned";
-    const current = groups.get(key) ?? { ownerName: topic.ownerName ?? "Unowned", topics: [] };
-    current.topics.push(topic);
-    groups.set(key, current);
+    if (topic.ownerIds.length === 0) {
+      const current = groups.get("unowned") ?? { ownerName: "Unowned", topics: [] };
+      current.topics.push(topic);
+      groups.set("unowned", current);
+      continue;
+    }
+    // A co-owned topic appears under each of its owners.
+    topic.ownerIds.forEach((ownerId, index) => {
+      const current = groups.get(ownerId) ?? { ownerName: topic.ownerNames[index] ?? "Player", topics: [] };
+      current.topics.push(topic);
+      groups.set(ownerId, current);
+    });
   }
 
   return [...groups.entries()].map(([ownerId, group]) => ({ ownerId, ...group }));
@@ -102,7 +110,7 @@ export function SessionConsole() {
     const participantSet = new Set(participantIds);
     const assignedTopicIds = new Set(
       (data?.topics ?? [])
-        .filter((topic) => topic.ownerId && participantSet.has(topic.ownerId))
+        .filter((topic) => topic.ownerIds.some((id) => participantSet.has(id)))
         .map((topic) => topic.id)
     );
     const topicIds =
@@ -115,7 +123,10 @@ export function SessionConsole() {
     const balance = new Map<string, number>();
 
     for (const topic of topics) {
-      const label = topic.ownerId && participantSet.has(topic.ownerId) ? topic.ownerName ?? "Player" : "Extra";
+      // Attribute the topic to its first participating owner (matches the pool's
+      // primary-owner balance group); non-participant-owned topics count as extra.
+      const primaryOwnerIndex = topic.ownerIds.findIndex((id) => participantSet.has(id));
+      const label = primaryOwnerIndex >= 0 ? topic.ownerNames[primaryOwnerIndex] ?? "Player" : "Extra";
       balance.set(label, (balance.get(label) ?? 0) + topic.questionCount);
     }
 
