@@ -24,6 +24,7 @@ const StartRequest = z.object({
 type StartQuestionRow = {
   id: string;
   topic_id: string;
+  term_key: string | null;
 };
 
 function unique(values: string[]) {
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
       (from, to) =>
         supabase
           .from("questions")
-          .select("id, topic_id")
+          .select("id, topic_id, term_key")
           .in("topic_id", topicIds.length ? topicIds : ["00000000-0000-0000-0000-000000000000"])
           .range(from, to),
       "Could not load questions"
@@ -120,7 +121,8 @@ export async function POST(request: Request) {
       ),
       questions: questions.map((question) => ({
         id: question.id,
-        topicId: question.topic_id
+        topicId: question.topic_id,
+        termKey: question.term_key ?? question.id // fallback: ungrouped when null
       }))
     });
 
@@ -169,7 +171,8 @@ export async function POST(request: Request) {
       session_id: sessionId,
       question_id: question.id,
       question_order: index + 1,
-      assigned_to: question.assignedTo
+      assigned_to: question.assignedTo,
+      owners: question.owners
     }));
 
     const [{ error: participantInsertError }, { error: topicInsertError }, { error: questionInsertError }] =
