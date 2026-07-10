@@ -52,6 +52,7 @@ describe("parseGlossaryCsv", () => {
       question:
         '1. (n.) [Geology] A, with comma | 2. (n.) [Drilling] More "quoted" text.',
       answer: "abnormal pressure",
+      acceptedAnswers: ["abnormal pressure"],
       termKey: "abnormal pressure",
       displayOrder: 1,
       metadata: {
