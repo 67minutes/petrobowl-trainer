@@ -245,6 +245,7 @@ export async function GET(request: Request) {
         .from("topics")
         .select("id, name, display_order")
         .eq("team_id", activePlayer.team_id)
+        .is("retired_at", null)
         .order("display_order"),
       supabase
         .from("topic_assignments")
