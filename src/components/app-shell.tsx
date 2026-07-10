@@ -6,15 +6,18 @@ import {
   Gauge,
   RadioTower,
   Settings2,
-  Target
+  Target,
+  Trophy
 } from "lucide-react";
 import { clsx } from "clsx";
 import { SessionMenu } from "@/components/auth/session-menu";
+import { XpHud } from "@/components/gamification/xp-hud";
 
 const navItems = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/drill", label: "Drill", icon: BookOpenCheck },
+  { href: "/rewards", label: "Rewards", icon: Trophy },
   { href: "/session", label: "Session", icon: RadioTower },
   { href: "/analytics", label: "Analytics", icon: ClipboardList },
   { href: "/coach", label: "Coach", icon: Target },
@@ -67,7 +70,10 @@ export function AppShell({ active, eyebrow, title, subtitle, children, aside }: 
               );
             })}
           </nav>
-          <SessionMenu />
+          <div className="flex items-center gap-3">
+            <XpHud />
+            <SessionMenu />
+          </div>
         </div>
       </header>
 

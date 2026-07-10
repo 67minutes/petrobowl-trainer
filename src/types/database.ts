@@ -78,3 +78,61 @@ export type CardProgress = {
   next_review: string;
   last_reviewed: string | null;
 };
+
+// Gamification (migration 0009). Derived from drill_responses/card_progress; never alters the SRS.
+export type PlayerGamification = {
+  player_id: string;
+  xp: number;
+  level: number;
+  coins: number;
+  current_streak: number;
+  longest_streak: number;
+  last_active_date: string | null;
+  current_combo: number;
+  streak_freezes: number;
+  updated_at: string;
+};
+
+export type DailyQuest = {
+  id: string;
+  player_id: string;
+  quest_date: string;
+  quest_key: string;
+  target: number;
+  progress: number;
+  reward_xp: number;
+  reward_coins: number;
+  completed_at: string | null;
+  created_at: string;
+};
+
+export type PlayerAchievement = {
+  id: string;
+  player_id: string;
+  achievement_key: string;
+  unlocked_at: string;
+};
+
+export type CosmeticSlot = "theme" | "sound" | "mascot" | "frame" | "badge";
+
+export type PlayerCosmetic = {
+  id: string;
+  player_id: string;
+  cosmetic_key: string;
+  slot: CosmeticSlot;
+  equipped: boolean;
+  acquired_at: string;
+};
+
+export type TeamChallenge = {
+  id: string;
+  team_id: string;
+  week_start: string;
+  challenge_key: string;
+  target: number;
+  reward_xp: number;
+  reward_coins: number;
+  completed_at: string | null;
+  rewarded_player_ids: string[];
+  created_at: string;
+};

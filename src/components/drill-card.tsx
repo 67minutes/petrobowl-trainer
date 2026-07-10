@@ -2,8 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { Eye, RotateCcw } from "lucide-react";
+import { clsx } from "clsx";
 import type { ReviewRating } from "@/lib/sm2";
 import type { DrillQueueCard, DrillReviewResult } from "@/types/drill";
+import type { AwardSummary } from "@/types/gamification";
+import { useGamification } from "@/components/gamification/gamification-provider";
+
+const MASCOT_EMOJI: Record<string, string> = {
+  mascot_rocky: "👷",
+  mascot_bit: "🔩",
+  mascot_derrick: "🛢️"
+};
+
+const FRAME_CLASS: Record<string, string> = {
+  frame_bronze: "border-2 border-[#cd7f32]",
+  frame_silver: "border-2 border-slate-400",
+  frame_gold: "border-2 border-gold-400",
+  frame_plasma: "border-2 border-fuchsia-400 shadow-glow"
+};
 
 const ratings: { id: ReviewRating; label: string; detail: string }[] = [
   { id: "again", label: "Again", detail: "Wrong" },
@@ -12,29 +28,43 @@ const ratings: { id: ReviewRating; label: string; detail: string }[] = [
   { id: "easy", label: "Easy", detail: "Instant" }
 ];
 
+export type ReviewOutcome = {
+  correct: boolean;
+  award: AwardSummary | null;
+};
+
 type DrillCardProps = {
   card: DrillQueueCard | null;
   accessToken: string;
-  onReviewed: () => Promise<void>;
+  onReviewed: (outcome: ReviewOutcome) => Promise<void>;
 };
 
 type ReviewResponse = {
   result?: DrillReviewResult;
+  award?: AwardSummary | null;
   error?: string;
 };
 
 export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
+  const { applyAward, me } = useGamification();
   const [shown, setShown] = useState(false);
   const [startedAt, setStartedAt] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState<ReviewRating | null>(null);
   const [result, setResult] = useState<DrillReviewResult | null>(null);
+  const [award, setAward] = useState<AwardSummary | null>(null);
+  const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const mascot = MASCOT_EMOJI[me?.equipped.mascot ?? "mascot_rocky"];
+  const frameClass = FRAME_CLASS[me?.equipped.frame ?? "frame_bronze"] ?? "";
 
   useEffect(() => {
     setShown(false);
     setStartedAt(Date.now());
     setSubmitting(null);
     setResult(null);
+    setAward(null);
+    setFeedback(null);
     setError(null);
   }, [card?.questionId]);
 
@@ -66,6 +96,11 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
       }
 
       setResult(payload.result);
+      setFeedback(rating === "again" ? "wrong" : "correct");
+      if (payload.award) {
+        setAward(payload.award);
+        applyAward(payload.award);
+      }
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : "Review unavailable.");
     } finally {
@@ -85,21 +120,35 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
   }
 
   return (
-    <div className="surface rounded p-5">
+    <div
+      className={clsx(
+        "surface rounded p-5",
+        frameClass,
+        feedback === "correct" && "animate-pop",
+        feedback === "wrong" && "animate-shake"
+      )}
+    >
       <div className="flex items-start justify-between gap-4 border-b border-ink-200 pb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
-            {card.topic}
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-ink-900">
-            {card.isNew ? "New card" : "Due review"}
-          </h2>
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="text-2xl" title="Your study buddy">
+            {mascot}
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
+              {card.topic}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-ink-900">
+              {card.isNew ? "New card" : "Due review"}
+            </h2>
+          </div>
         </div>
         <button
           type="button"
           onClick={() => {
             setShown(false);
             setResult(null);
+            setAward(null);
+            setFeedback(null);
             setError(null);
           }}
           className="focus-ring rounded p-2 text-ink-500 transition hover:bg-white hover:text-ink-900"
@@ -168,15 +217,34 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
 
       {result ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-ink-600">
-            Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
-            <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
-            <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
-          </p>
+          <div className="space-y-2">
+            {award && award.xpGained > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-gold-500 px-2.5 py-0.5 text-xs font-bold text-white">
+                  +{award.xpGained} XP
+                </span>
+                {award.combo >= 2 ? (
+                  <span className="rounded-full bg-combo-500 px-2.5 py-0.5 text-xs font-bold text-white">
+                    Combo x{award.combo}
+                  </span>
+                ) : null}
+                {award.coinsGained > 0 ? (
+                  <span className="rounded-full bg-gold-500/15 px-2.5 py-0.5 text-xs font-bold text-gold-600">
+                    +{award.coinsGained} coins
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <p className="text-sm text-ink-600">
+              Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
+              <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
+              <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() => void onReviewed()}
-            className="focus-ring inline-flex items-center justify-center rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
+            onClick={() => void onReviewed({ correct: feedback === "correct", award })}
+            className="focus-ring inline-flex shrink-0 items-center justify-center rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
           >
             Next
           </button>
