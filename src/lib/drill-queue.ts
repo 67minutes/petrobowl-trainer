@@ -12,6 +12,8 @@ export type QueueQuestion = {
   question?: string;
   answer?: string;
   acceptedAnswers?: string[];
+  imageUrl?: string | null;
+  imageCaption?: string | null;
   displayOrder: number;
 };
 

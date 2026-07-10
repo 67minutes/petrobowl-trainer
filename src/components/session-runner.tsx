@@ -166,6 +166,19 @@ export function SessionRunner({ sessionId }: { sessionId: string }) {
                     ? current.acceptedAnswers.join(" / ")
                     : current.answer}
                 </p>
+                {current.imageUrl ? (
+                  <figure className="mt-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={current.imageUrl}
+                      alt={current.imageCaption ?? current.answer}
+                      className="max-h-72 w-auto rounded border border-ink-200 bg-white"
+                    />
+                    {current.imageCaption ? (
+                      <figcaption className="mt-1 text-xs text-ink-500">{current.imageCaption}</figcaption>
+                    ) : null}
+                  </figure>
+                ) : null}
                 {current.missedBy.length ? (
                   <p className="mt-3 text-sm text-signal-600">
                     Locked out: {current.missedByNames.join(", ")}
