@@ -120,6 +120,19 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
           <p className="mt-1 text-lg font-semibold text-ink-900">
             {card.acceptedAnswers.length > 1 ? card.acceptedAnswers.join(" / ") : card.answer}
           </p>
+          {card.imageUrl ? (
+            <figure className="mt-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={card.imageUrl}
+                alt={card.imageCaption ?? card.answer}
+                className="max-h-72 w-auto rounded border border-ink-200 bg-white"
+              />
+              {card.imageCaption ? (
+                <figcaption className="mt-1 text-xs text-ink-500">{card.imageCaption}</figcaption>
+              ) : null}
+            </figure>
+          ) : null}
         </div>
       ) : null}
 

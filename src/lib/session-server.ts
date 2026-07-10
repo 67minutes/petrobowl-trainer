@@ -47,6 +47,7 @@ type RawSessionQuestion = {
         question: string;
         answer: string;
         accepted_answers: string[] | null;
+        metadata: QuestionMetadata | null;
         topic_id: string;
         topics: { name: string } | { name: string }[] | null;
       }
@@ -54,10 +55,16 @@ type RawSessionQuestion = {
         question: string;
         answer: string;
         accepted_answers: string[] | null;
+        metadata: QuestionMetadata | null;
         topic_id: string;
         topics: { name: string } | { name: string }[] | null;
       }[]
     | null;
+};
+
+type QuestionMetadata = {
+  imageUrl?: string;
+  imageCaption?: string;
 };
 
 type RawTopic = {
@@ -207,7 +214,7 @@ export async function loadSessionData(
 
   const { data: questionRows, error: questionsError } = await supabase
     .from("session_questions")
-    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, accepted_answers, topic_id, topics(name))")
+    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, accepted_answers, metadata, topic_id, topics(name))")
     .eq("session_id", rawSession.id)
     .order("question_order");
 
@@ -236,6 +243,8 @@ export async function loadSessionData(
           : question?.answer
             ? [question.answer]
             : [],
+      imageUrl: question?.metadata?.imageUrl ?? null,
+      imageCaption: question?.metadata?.imageCaption ?? null,
       assignedTo: owners[0] ?? null,
       assignedToName: owners[0] ? playerNameById.get(owners[0]) ?? null : null,
       owners,

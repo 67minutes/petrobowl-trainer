@@ -25,6 +25,7 @@ type QueueQuestionRow = {
   question: string;
   answer: string;
   accepted_answers: string[] | null;
+  metadata: { imageUrl?: string; imageCaption?: string } | null;
   display_order: number;
 };
 
@@ -229,7 +230,7 @@ export async function GET(request: Request) {
         (from, to) =>
           supabase
             .from("questions")
-            .select("id, topic_id, question, answer, accepted_answers, display_order")
+            .select("id, topic_id, question, answer, accepted_answers, metadata, display_order")
             .in("topic_id", activeTopicIds)
             .order("display_order")
             .range(from, to),
@@ -280,6 +281,8 @@ export async function GET(request: Request) {
         question.accepted_answers && question.accepted_answers.length > 0
           ? question.accepted_answers
           : [question.answer],
+      imageUrl: question.metadata?.imageUrl ?? null,
+      imageCaption: question.metadata?.imageCaption ?? null,
       displayOrder: Number(question.display_order ?? 0)
     }));
     const activeQuestionIds = new Set(questions.map((question) => question.id));
@@ -334,6 +337,8 @@ export async function GET(request: Request) {
               selectedQuestion.acceptedAnswers && selectedQuestion.acceptedAnswers.length > 0
                 ? selectedQuestion.acceptedAnswers
                 : [selectedQuestion.answer],
+            imageUrl: selectedQuestion.imageUrl ?? null,
+            imageCaption: selectedQuestion.imageCaption ?? null,
             topic: topicNameById.get(selectedQuestion.topicId) ?? "Topic",
             isNew: !selectedProgress,
             progress: selectedProgress

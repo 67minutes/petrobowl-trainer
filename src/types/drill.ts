@@ -6,6 +6,8 @@ export type DrillQueueCard = {
   question: string;
   answer: string;
   acceptedAnswers: string[];
+  imageUrl: string | null;
+  imageCaption: string | null;
   topic: string;
   isNew: boolean;
   progress: {
