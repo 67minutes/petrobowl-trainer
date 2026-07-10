@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceSupabaseClient } from "@/lib/supabase";
 import { reviewCard } from "@/lib/sm2";
+import { awardForReview } from "@/lib/gamification/award-server";
+import type { AwardSummary } from "@/types/gamification";
 
 const ReviewRequest = z.object({
   questionId: z.string().uuid(),
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
 
   const { data: activePlayer, error: activePlayerError } = await supabase
     .from("players")
-    .select("id")
+    .select("id, team_id")
     .eq("user_id", userData.user.id)
     .maybeSingle();
 
@@ -124,11 +126,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: responseError.message }, { status: 500 });
   }
 
+  // Gamification is best-effort and never blocks the SRS write above.
+  let award: AwardSummary | null = null;
+  try {
+    award = await awardForReview(supabase, {
+      playerId: activePlayer.id,
+      teamId: activePlayer.team_id,
+      rating,
+      priorIntervalDays: progress?.interval_days ?? 0,
+      newIntervalDays: reviewed.intervalDays,
+      wasNew: !progress,
+      reviewedAtISO: reviewed.lastReviewed
+    });
+  } catch (awardError) {
+    console.error("gamification award failed", awardError);
+  }
+
   return NextResponse.json({
     result: {
       nextReview: reviewed.nextReview,
       intervalDays: reviewed.intervalDays,
       easeFactor: reviewed.easeFactor
-    }
+    },
+    award
   });
 }

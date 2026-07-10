@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Crosshair, ListChecks, Plus, RotateCcw, Target } from "lucide-react";
+import { Check, Crosshair, ListChecks, Plus, RotateCcw, Sparkles, Target } from "lucide-react";
 import { clsx } from "clsx";
-import { DrillCard } from "@/components/drill-card";
+import { DrillCard, type ReviewOutcome } from "@/components/drill-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { fireConfetti } from "@/components/gamification/confetti";
 import { parseDrillMode } from "@/lib/drill-queue";
 import { StatRow } from "@/components/stat-row";
 import type { DrillMode, DrillQueueData } from "@/types/drill";
+
+type RunStats = { xp: number; correct: number; total: number; maxCombo: number };
+
+const EMPTY_RUN: RunStats = { xp: 0, correct: 0, total: 0, maxCombo: 0 };
 
 type DrillQueueResponse = {
   data?: DrillQueueData;
@@ -52,6 +57,7 @@ export function DrillWorkspace() {
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>(readInitialTopicIds);
   const [sessionTarget, setSessionTarget] = useState(20);
   const [reviewedInRun, setReviewedInRun] = useState(0);
+  const [runStats, setRunStats] = useState<RunStats>(EMPTY_RUN);
 
   const loadQueue = useCallback(async () => {
     if (!session?.access_token) {
@@ -100,6 +106,7 @@ export function DrillWorkspace() {
   useEffect(() => {
     setLimitOverride(false);
     setReviewedInRun(0);
+    setRunStats(EMPTY_RUN);
   }, [mode, selectedTopicIds, sessionTarget]);
 
   const selectedTopicSet = useMemo(() => new Set(selectedTopicIds), [selectedTopicIds]);
@@ -113,6 +120,16 @@ export function DrillWorkspace() {
     data.stats.newCards === 0 &&
     (data.mode === "new" || data.stats.dueReviews === 0);
   const sessionGoalReached = Boolean(data?.card) && reviewedInRun >= sessionTarget;
+  const perfectRun = runStats.total > 0 && runStats.correct === runStats.total;
+  const runAccuracy = runStats.total === 0 ? 0 : Math.round((runStats.correct / runStats.total) * 100);
+
+  useEffect(() => {
+    if (sessionGoalReached) {
+      fireConfetti({ particles: perfectRun ? 200 : 140, power: perfectRun ? 1.3 : 1 });
+    }
+    // Fire once when the goal is first reached.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionGoalReached]);
 
   function selectMode(nextMode: DrillMode) {
     setMode(nextMode);
@@ -133,8 +150,14 @@ export function DrillWorkspace() {
     });
   }
 
-  async function handleReviewed() {
+  async function handleReviewed(outcome: ReviewOutcome) {
     setReviewedInRun((current) => current + 1);
+    setRunStats((current) => ({
+      xp: current.xp + (outcome.award?.xpGained ?? 0),
+      correct: current.correct + (outcome.correct ? 1 : 0),
+      total: current.total + 1,
+      maxCombo: Math.max(current.maxCombo, outcome.award?.combo ?? 0)
+    }));
     await loadQueue();
   }
 
@@ -256,14 +279,49 @@ export function DrillWorkspace() {
 
         {sessionGoalReached ? (
           <section className="surface rounded p-5">
-            <h2 className="text-lg font-semibold text-ink-900">Session target reached</h2>
-            <p className="mt-2 text-sm text-ink-500">
-              You reviewed {reviewedInRun} card{reviewedInRun === 1 ? "" : "s"} in this set.
-            </p>
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-gold-500/15">
+                <Sparkles aria-hidden className="h-6 w-6 text-gold-600" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-ink-900">
+                  {perfectRun ? "Perfect run!" : "Session target reached"}
+                </h2>
+                <p className="text-sm text-ink-500">
+                  You reviewed {reviewedInRun} card{reviewedInRun === 1 ? "" : "s"} in this set.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="rounded border border-ink-200 bg-white p-4 text-center">
+                <p className="text-2xl font-extrabold text-gold-600">+{runStats.xp}</p>
+                <p className="text-xs text-ink-500">XP earned</p>
+              </div>
+              <div className="rounded border border-ink-200 bg-white p-4 text-center">
+                <p className="text-2xl font-extrabold text-combo-600">{runAccuracy}%</p>
+                <p className="text-xs text-ink-500">Accuracy</p>
+              </div>
+              <div className="rounded border border-ink-200 bg-white p-4 text-center">
+                <p className="text-2xl font-extrabold text-flame-600">x{runStats.maxCombo}</p>
+                <p className="text-xs text-ink-500">Best combo</p>
+              </div>
+            </div>
+
+            {perfectRun ? (
+              <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-combo-500 px-3 py-1 text-xs font-bold text-white">
+                <Sparkles aria-hidden className="h-3.5 w-3.5" />
+                Flawless — no misses!
+              </p>
+            ) : null}
+
             <button
               type="button"
-              onClick={() => setReviewedInRun(0)}
-              className="focus-ring mt-5 inline-flex items-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
+              onClick={() => {
+                setReviewedInRun(0);
+                setRunStats(EMPTY_RUN);
+              }}
+              className="focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
             >
               <RotateCcw aria-hidden className="h-4 w-4" />
               Start another set

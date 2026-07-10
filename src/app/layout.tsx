@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/components/auth/auth-provider";
+import { GamificationProvider } from "@/components/gamification/gamification-provider";
+import { FxLayer } from "@/components/gamification/fx-layer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +17,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <GamificationProvider>
+            {children}
+            <FxLayer />
+          </GamificationProvider>
+        </AuthProvider>
       </body>
     </html>
   );

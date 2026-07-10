@@ -5,6 +5,29 @@
 :root {
   color-scheme: light;
   background: #f8fafc;
+
+  /* Gamification accent tokens — swapped by the equipped theme cosmetic. Default = Petrol. */
+  --game-accent: #0ea5e9;
+  --game-accent-strong: #0284c7;
+  --game-accent-soft: rgba(14, 165, 233, 0.12);
+}
+
+html[data-game-theme="neon"] {
+  --game-accent: #d946ef;
+  --game-accent-strong: #06b6d4;
+  --game-accent-soft: rgba(217, 70, 239, 0.14);
+}
+
+html[data-game-theme="midnight"] {
+  --game-accent: #6366f1;
+  --game-accent-strong: #4338ca;
+  --game-accent-soft: rgba(99, 102, 241, 0.14);
+}
+
+html[data-game-theme="sunset"] {
+  --game-accent: #fb7185;
+  --game-accent-strong: #f59e0b;
+  --game-accent-soft: rgba(251, 113, 133, 0.14);
 }
 
 * {
@@ -48,4 +71,34 @@ textarea {
 
 .focus-ring:focus-visible {
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.25);
+}
+
+/* XP bar shimmer fill. */
+.xp-fill {
+  background-image: linear-gradient(
+    90deg,
+    var(--game-accent-strong),
+    var(--game-accent),
+    #fbbf24,
+    var(--game-accent)
+  );
+  background-size: 200% 100%;
+}
+
+.game-accent-bg {
+  background-color: var(--game-accent);
+}
+
+.game-accent-text {
+  color: var(--game-accent-strong);
+}
+
+/* Respect reduced-motion: kill the looping decorative animations. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-pulse-ring,
+  .animate-float-up,
+  .animate-banner-in {
+    animation: none !important;
+  }
 }
