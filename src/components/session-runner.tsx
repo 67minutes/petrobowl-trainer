@@ -160,7 +160,12 @@ export function SessionRunner({ sessionId }: { sessionId: string }) {
                   {current.topicName ?? "Topic"} / {current.ownerNames.length ? current.ownerNames.join(" & ") : "Unowned"}
                 </p>
                 <p className="mt-3 text-2xl font-semibold leading-9 text-ink-900">{current.question}</p>
-                <p className="mt-4 text-lg text-ink-600">Answer: {current.answer}</p>
+                <p className="mt-4 text-lg text-ink-600">
+                  Answer:{" "}
+                  {current.acceptedAnswers.length > 1
+                    ? current.acceptedAnswers.join(" / ")
+                    : current.answer}
+                </p>
                 {current.missedBy.length ? (
                   <p className="mt-3 text-sm text-signal-600">
                     Locked out: {current.missedByNames.join(", ")}

@@ -5,6 +5,7 @@ export type DrillQueueCard = {
   topicId: string;
   question: string;
   answer: string;
+  acceptedAnswers: string[];
   topic: string;
   isNew: boolean;
   progress: {

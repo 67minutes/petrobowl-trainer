@@ -114,8 +114,12 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
 
       {shown ? (
         <div className="mt-5 border-l-4 border-petrol-500 bg-petrol-500/10 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-petrol-600">Answer</p>
-          <p className="mt-1 text-lg font-semibold text-ink-900">{card.answer}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-petrol-600">
+            {card.acceptedAnswers.length > 1 ? "Accepted answers" : "Answer"}
+          </p>
+          <p className="mt-1 text-lg font-semibold text-ink-900">
+            {card.acceptedAnswers.length > 1 ? card.acceptedAnswers.join(" / ") : card.answer}
+          </p>
         </div>
       ) : null}
 

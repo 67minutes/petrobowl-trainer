@@ -16,6 +16,7 @@ export type QuizSessionQuestion = {
   topicName: string | null;
   question: string;
   answer: string;
+  acceptedAnswers: string[];
   assignedTo: string | null;
   assignedToName: string | null;
   owners: string[];

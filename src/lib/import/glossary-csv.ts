@@ -1,6 +1,9 @@
 export type ParsedGlossaryQuestion = {
   question: string;
   answer: string;
+  // Every acceptable answer term for this card (the primary `answer` plus any
+  // synonyms merged into it). Always contains at least `answer`.
+  acceptedAnswers: string[];
   termKey: string;
   displayOrder: number;
   metadata: { disciplines?: string; url?: string };
@@ -132,6 +135,7 @@ export function parseGlossaryCsv(slug: string, name: string, content: string): P
     questions.push({
       question,
       answer,
+      acceptedAnswers: [answer],
       termKey: normalizeTermKey(answer),
       displayOrder: questions.length + 1,
       metadata

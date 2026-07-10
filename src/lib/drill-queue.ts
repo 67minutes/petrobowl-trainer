@@ -11,6 +11,7 @@ export type QueueQuestion = {
   topicId: string;
   question?: string;
   answer?: string;
+  acceptedAnswers?: string[];
   displayOrder: number;
 };
 

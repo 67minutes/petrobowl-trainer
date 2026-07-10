@@ -4,12 +4,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { GLOSSARY_TOPICS, SEED_PLAYERS, TEAM_NAME, TOPIC_OWNERS } from "@/lib/constants";
 import { createServiceSupabaseClient } from "@/lib/supabase";
 import { parseGlossaryCsv, type ParsedGlossaryTopic } from "@/lib/import/glossary-csv";
+import { collapseSynonyms } from "@/lib/import/synonyms";
 
 export async function loadGlossaryTopics(dir: string): Promise<ParsedGlossaryTopic[]> {
   const topics: ParsedGlossaryTopic[] = [];
   for (const { slug, name } of GLOSSARY_TOPICS) {
     const content = await readFile(path.join(dir, `${slug}.csv`), "utf8");
-    topics.push(parseGlossaryCsv(slug, name, content));
+    // Merge synonymous terms within a topic into single multi-answer questions.
+    topics.push(collapseSynonyms(parseGlossaryCsv(slug, name, content)));
   }
   return topics;
 }
@@ -122,6 +124,7 @@ export async function seedGlossary(
       topic_id: topicRow.id,
       question: question.question,
       answer: question.answer,
+      accepted_answers: question.acceptedAnswers,
       term_key: question.termKey,
       metadata: question.metadata,
       display_order: question.displayOrder

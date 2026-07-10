@@ -46,12 +46,14 @@ type RawSessionQuestion = {
     | {
         question: string;
         answer: string;
+        accepted_answers: string[] | null;
         topic_id: string;
         topics: { name: string } | { name: string }[] | null;
       }
     | {
         question: string;
         answer: string;
+        accepted_answers: string[] | null;
         topic_id: string;
         topics: { name: string } | { name: string }[] | null;
       }[]
@@ -205,7 +207,7 @@ export async function loadSessionData(
 
   const { data: questionRows, error: questionsError } = await supabase
     .from("session_questions")
-    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, topic_id, topics(name))")
+    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, accepted_answers, topic_id, topics(name))")
     .eq("session_id", rawSession.id)
     .order("question_order");
 
@@ -228,6 +230,12 @@ export async function loadSessionData(
       topicName: topic?.name ?? null,
       question: question?.question ?? "",
       answer: question?.answer ?? "",
+      acceptedAnswers:
+        question?.accepted_answers && question.accepted_answers.length > 0
+          ? question.accepted_answers
+          : question?.answer
+            ? [question.answer]
+            : [],
       assignedTo: owners[0] ?? null,
       assignedToName: owners[0] ? playerNameById.get(owners[0]) ?? null : null,
       owners,
