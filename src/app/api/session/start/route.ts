@@ -18,7 +18,10 @@ const StartRequest = z.object({
   numQuestions: z.number().int().min(1).max(100).default(20),
   participantIds: z.array(z.string().uuid()).min(1),
   topicMode: z.enum(["topics", "playerAssigned", "playerAssignedPlus"]),
-  topicIds: z.array(z.string().uuid()).optional()
+  topicIds: z.array(z.string().uuid()).optional(),
+  // Opt-in bonus (study) topics + how many bonus questions to mix in.
+  bonusTopicIds: z.array(z.string().uuid()).optional(),
+  bonusCount: z.number().int().min(0).max(50).default(0)
 });
 
 type StartQuestionRow = {
@@ -54,6 +57,7 @@ export async function POST(request: Request) {
 
     const participantIds = unique(payload.data.participantIds);
     const selectedTopicIds = unique(payload.data.topicIds ?? []);
+    const bonusTopicIds = unique(payload.data.bonusTopicIds ?? []);
     const [{ data: players, error: playersError }, { data: topics, error: topicsError }] = await Promise.all([
       supabase
         .from("players")
@@ -86,6 +90,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Topic not found." }, { status: 400 });
     }
 
+    const invalidBonusTopic = bonusTopicIds.find((topicId) => !teamTopicIds.has(topicId));
+
+    if (invalidBonusTopic) {
+      return NextResponse.json({ error: "Bonus topic not found." }, { status: 400 });
+    }
+
     const topicIds = topicRows.map((topic) => topic.id);
     const { data: assignments, error: assignmentsError } = topicIds.length
       ? await supabase
@@ -97,6 +107,18 @@ export async function POST(request: Request) {
 
     if (assignmentsError || !assignments) {
       throw new Error(assignmentsError?.message ?? "Could not load assignments.");
+    }
+
+    // Bonus topics must be unowned study topics — an owned topic belongs to the
+    // ratio-scored pool, not the additive bonus pool.
+    const ownedTopicIds = new Set((assignments as { topic_id: string }[]).map((row) => row.topic_id));
+    const ownedBonusTopic = bonusTopicIds.find((topicId) => ownedTopicIds.has(topicId));
+
+    if (ownedBonusTopic) {
+      return NextResponse.json(
+        { error: "Bonus topics must be unowned study topics." },
+        { status: 400 }
+      );
     }
 
     const questions = await fetchAllPages<StartQuestionRow>(
@@ -112,6 +134,7 @@ export async function POST(request: Request) {
       topicMode: payload.data.topicMode as SessionTopicMode,
       participantIds,
       selectedTopicIds,
+      bonusTopicIds,
       topics: topicRows,
       assignments: (assignments as { topic_id: string; player_id: string }[]).map<SessionPoolAssignment>(
         (assignment) => ({
@@ -133,8 +156,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const selectedQuestions = drawBalancedQuestions(pool.questions, {
+    if (payload.data.bonusCount > pool.bonusQuestions.length) {
+      return NextResponse.json(
+        { error: `Only ${pool.bonusQuestions.length} bonus question${pool.bonusQuestions.length === 1 ? "" : "s"} available.` },
+        { status: 400 }
+      );
+    }
+
+    const drawnRegular = drawBalancedQuestions(pool.questions, {
       count: payload.data.numQuestions
+    });
+    const drawnBonus = drawBalancedQuestions(pool.bonusQuestions, {
+      count: payload.data.bonusCount
+    });
+    // Interleave the bonus questions through the run (balanced by balanceGroup,
+    // where every bonus shares the "bonus" group) so they are not all clustered.
+    const selectedQuestions = drawBalancedQuestions([...drawnRegular, ...drawnBonus], {
+      count: drawnRegular.length + drawnBonus.length
     });
     const sessionName =
       payload.data.name?.trim() ??
@@ -172,7 +210,8 @@ export async function POST(request: Request) {
       question_id: question.id,
       question_order: index + 1,
       assigned_to: question.assignedTo,
-      owners: question.owners
+      owners: question.owners,
+      is_bonus: question.isBonus
     }));
 
     const [{ error: participantInsertError }, { error: topicInsertError }, { error: questionInsertError }] =

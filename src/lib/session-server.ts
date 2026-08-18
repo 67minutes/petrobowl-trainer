@@ -42,6 +42,7 @@ type RawSessionQuestion = {
   buzzed_by: string | null;
   correct: boolean;
   missed_by: string[] | null;
+  is_bonus: boolean | null;
   questions:
     | {
         question: string;
@@ -214,7 +215,7 @@ export async function loadSessionData(
 
   const { data: questionRows, error: questionsError } = await supabase
     .from("session_questions")
-    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, questions(question, answer, accepted_answers, metadata, topic_id, topics(name))")
+    .select("id, question_id, question_order, assigned_to, owners, buzzed_by, correct, missed_by, is_bonus, questions(question, answer, accepted_answers, metadata, topic_id, topics(name))")
     .eq("session_id", rawSession.id)
     .order("question_order");
 
@@ -253,7 +254,8 @@ export async function loadSessionData(
       buzzedByName: row.buzzed_by ? playerNameById.get(row.buzzed_by) ?? null : null,
       correct: row.correct,
       missedBy,
-      missedByNames: missedBy.map((id) => playerNameById.get(id) ?? "Unknown")
+      missedByNames: missedBy.map((id) => playerNameById.get(id) ?? "Unknown"),
+      isBonus: row.is_bonus ?? false
     };
   });
 
@@ -268,7 +270,8 @@ export async function loadSessionData(
         owners: question.owners,
         buzzedBy: question.buzzedBy,
         correct: question.correct,
-        missedBy: question.missedBy
+        missedBy: question.missedBy,
+        isBonus: question.isBonus
       }))
     ),
     session: {

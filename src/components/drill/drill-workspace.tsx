@@ -111,6 +111,15 @@ export function DrillWorkspace() {
 
   const selectedTopicSet = useMemo(() => new Set(selectedTopicIds), [selectedTopicIds]);
   const allTopicsSelected = selectedTopicIds.length === 0;
+  const assignedOptions = useMemo(
+    () => data?.topicOptions.filter((topic) => topic.kind === "assigned") ?? [],
+    [data]
+  );
+  const studyOptions = useMemo(
+    () => data?.topicOptions.filter((topic) => topic.kind === "study") ?? [],
+    [data]
+  );
+  const assignedTopicIds = useMemo(() => assignedOptions.map((topic) => topic.id), [assignedOptions]);
   const dailyLimitReached =
     data &&
     !data.card &&
@@ -137,12 +146,18 @@ export function DrillWorkspace() {
 
   function toggleTopic(topicId: string) {
     setSelectedTopicIds((current) => {
-      const explicitCurrent = current.length ? current : data?.topicOptions.map((topic) => topic.id) ?? [];
-      const next = explicitCurrent.includes(topicId)
-        ? explicitCurrent.filter((id) => id !== topicId)
-        : [...explicitCurrent, topicId];
+      // Empty selection means "all assigned"; expand it before toggling so study
+      // topics act as opt-in add-ons on top of the assigned load.
+      const base = current.length ? current : assignedTopicIds;
+      const next = base.includes(topicId)
+        ? base.filter((id) => id !== topicId)
+        : [...base, topicId];
 
-      if (!next.length || next.length === data?.topicOptions.length) {
+      // Collapse back to the canonical "all assigned" ([]) when the selection is
+      // exactly the assigned set (and nothing extra).
+      const isAllAssigned =
+        next.length === assignedTopicIds.length && assignedTopicIds.every((id) => next.includes(id));
+      if (!next.length || isAllAssigned) {
         return [];
       }
 
@@ -213,42 +228,76 @@ export function DrillWorkspace() {
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">Topics</p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTopicIds([])}
-                  className={clsx(
-                    "focus-ring inline-flex items-center gap-2 rounded border px-3 py-2 text-sm transition",
-                    allTopicsSelected
-                      ? "border-petrol-600 bg-petrol-600 text-white"
-                      : "border-ink-200 bg-white text-ink-600 hover:border-petrol-500 hover:text-petrol-600"
-                  )}
-                >
-                  <ListChecks aria-hidden className="h-4 w-4" />
-                  All assigned
-                </button>
-                {data.topicOptions.map((topic) => {
-                  const selected = allTopicsSelected || selectedTopicSet.has(topic.id);
-                  return (
-                    <button
-                      key={topic.id}
-                      type="button"
-                      onClick={() => toggleTopic(topic.id)}
-                      className={clsx(
-                        "focus-ring inline-flex max-w-full items-center gap-2 rounded border px-3 py-2 text-sm transition",
-                        selected
-                          ? "border-ink-900 bg-ink-900 text-white"
-                          : "border-ink-200 bg-white text-ink-600 hover:border-petrol-500 hover:text-petrol-600"
-                      )}
-                    >
-                      {selected ? <Check aria-hidden className="h-4 w-4 shrink-0" /> : null}
-                      <span className="truncate">{topic.name}</span>
-                    </button>
-                  );
-                })}
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">Topics</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTopicIds([])}
+                    className={clsx(
+                      "focus-ring inline-flex items-center gap-2 rounded border px-3 py-2 text-sm transition",
+                      allTopicsSelected
+                        ? "border-petrol-600 bg-petrol-600 text-white"
+                        : "border-ink-200 bg-white text-ink-600 hover:border-petrol-500 hover:text-petrol-600"
+                    )}
+                  >
+                    <ListChecks aria-hidden className="h-4 w-4" />
+                    All assigned
+                  </button>
+                  {assignedOptions.map((topic) => {
+                    const selected = allTopicsSelected || selectedTopicSet.has(topic.id);
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => toggleTopic(topic.id)}
+                        className={clsx(
+                          "focus-ring inline-flex max-w-full items-center gap-2 rounded border px-3 py-2 text-sm transition",
+                          selected
+                            ? "border-ink-900 bg-ink-900 text-white"
+                            : "border-ink-200 bg-white text-ink-600 hover:border-petrol-500 hover:text-petrol-600"
+                        )}
+                      >
+                        {selected ? <Check aria-hidden className="h-4 w-4 shrink-0" /> : null}
+                        <span className="truncate">{topic.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+
+              {studyOptions.length > 0 ? (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">
+                    Additional topics
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {studyOptions.map((topic) => {
+                      const selected = selectedTopicSet.has(topic.id);
+                      return (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          onClick={() => toggleTopic(topic.id)}
+                          className={clsx(
+                            "focus-ring inline-flex max-w-full items-center gap-2 rounded border px-3 py-2 text-sm transition",
+                            selected
+                              ? "border-ink-900 bg-ink-900 text-white"
+                              : "border-ink-200 bg-white text-ink-600 hover:border-petrol-500 hover:text-petrol-600"
+                          )}
+                        >
+                          {selected ? <Check aria-hidden className="h-4 w-4 shrink-0" /> : null}
+                          <span className="truncate">{topic.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-ink-500">
+                    Extra study glossaries — not part of buzzer scoring. Tap to add to your drill.
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div>

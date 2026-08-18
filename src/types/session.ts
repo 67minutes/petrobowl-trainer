@@ -28,6 +28,7 @@ export type QuizSessionQuestion = {
   correct: boolean;
   missedBy: string[];
   missedByNames: string[];
+  isBonus: boolean;
 };
 
 export type QuizSession = {

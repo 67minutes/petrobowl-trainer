@@ -27,6 +27,15 @@ export const GLOSSARY_TOPICS: { slug: string; name: string }[] = [
   { slug: "well_workover_and_intervention", name: "Well Workover and Intervention" }
 ];
 
+// Additional public-domain energy glossaries layered on top of the SLB bank as
+// study-only topics (no owners, not part of buzzer scoring). Seeded additively by
+// scripts/seed-energy-glossaries.ts, sourced from data/energy_glossaries/<slug>.csv.
+export const ENERGY_GLOSSARY_TOPICS: { slug: string; name: string; source: string }[] = [
+  { slug: "renewables", name: "Renewables", source: "EIA Glossary" },
+  { slug: "geothermal", name: "Geothermal", source: "DOE Geothermal Glossary" },
+  { slug: "hydrogen", name: "Hydrogen", source: "DOE Hydrogen Glossary" }
+];
+
 export type SeedPlayer = {
   name: string;
   role: PlayerRole;

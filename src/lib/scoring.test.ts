@@ -129,4 +129,59 @@ describe("calculateSessionScores", () => {
     const p3 = scores.find((s) => s.playerId === "p3");
     expect(p3).toMatchObject({ outOfTopic: 1 });
   });
+
+  it("adds +5 per correct bonus without touching defense/offense ratios", () => {
+    const scores = calculateSessionScores(
+      [
+        { id: "p1", name: "A" },
+        { id: "p2", name: "B" }
+      ],
+      [
+        // p1 wins their own owned question (defense = 100).
+        { id: "q1", owners: ["p1"], buzzedBy: "p1", correct: true, missedBy: [] },
+        // Two bonus questions, both won by p1.
+        { id: "b1", owners: [], buzzedBy: "p1", correct: true, missedBy: [], isBonus: true },
+        { id: "b2", owners: [], buzzedBy: "p1", correct: true, missedBy: [], isBonus: true }
+      ]
+    );
+
+    const p1 = scores.find((s) => s.playerId === "p1");
+    // Bonus rows are invisible to the ratio model: p1 still owns exactly 1 question,
+    // owns nothing "other", so defense=100, offense=0.
+    expect(p1).toMatchObject({
+      ownQuestions: 1,
+      otherQuestions: 0,
+      outOfTopic: 0,
+      bonusCorrect: 2,
+      bonusPoints: 10,
+      defenseScore: 100,
+      offenseBonus: 0
+    });
+    // total = 0.7*100 + 0.3*0 + 10 = 80.
+    expect(p1?.totalScore).toBe(80);
+  });
+
+  it("never penalizes a missed or dead bonus question", () => {
+    const scores = calculateSessionScores(
+      [
+        { id: "p1", name: "A" },
+        { id: "p2", name: "B" }
+      ],
+      [
+        // p2 buzzed the bonus wrong (locked out), then it died with no correct answer.
+        { id: "b1", owners: [], buzzedBy: null, correct: false, missedBy: ["p2"], isBonus: true }
+      ]
+    );
+
+    const p2 = scores.find((s) => s.playerId === "p2");
+    // No wrong-buzz penalty, no offense denominator effect, no bonus points.
+    expect(p2).toMatchObject({
+      wrongBuzzes: 0,
+      otherQuestions: 0,
+      offenseBonus: 0,
+      bonusCorrect: 0,
+      bonusPoints: 0,
+      totalScore: 0
+    });
+  });
 });

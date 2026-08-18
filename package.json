@@ -12,6 +12,8 @@
     "import:dry-run": "tsx scripts/import-question-bank.ts examples/ALL_COMPILED.xlsx --dry-run",
     "import:questions": "tsx scripts/import-question-bank.ts examples/ALL_COMPILED.xlsx --supabase",
     "seed:glossary": "tsx --env-file=.env.local scripts/seed-glossary.ts",
+    "scrape:energy": "tsx scripts/scrape-energy-glossaries.ts",
+    "seed:energy": "tsx --env-file=.env.local scripts/seed-energy-glossaries.ts",
     "create-admins": "tsx --env-file=.env.local scripts/create-admins.ts"
   },
   "dependencies": {
