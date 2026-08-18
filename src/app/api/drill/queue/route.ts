@@ -10,7 +10,7 @@ import {
   type QueueResponseStats
 } from "@/lib/drill-queue";
 import { createServiceSupabaseClient } from "@/lib/supabase";
-import type { DrillQueueCard, DrillQueueData } from "@/types/drill";
+import type { DrillQueueCard, DrillQueueData, DrillTopicKind } from "@/types/drill";
 
 export const runtime = "nodejs";
 
@@ -177,7 +177,7 @@ export async function GET(request: Request) {
 
   const { data: activePlayer, error: activePlayerError } = await supabase
     .from("players")
-    .select("id")
+    .select("id, team_id")
     .eq("user_id", userData.user.id)
     .maybeSingle();
 
@@ -199,11 +199,51 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: assignmentsError.message }, { status: 500 });
   }
 
-  const activeTopicIds = assignments?.map((assignment) => assignment.topic_id as string) ?? [];
+  const assignedTopicIds = assignments?.map((assignment) => assignment.topic_id as string) ?? [];
 
-  if (!activeTopicIds.length) {
+  // Drillable universe = my assigned topics + the team's study-only topics: any
+  // non-retired team topic that nobody owns (e.g. the public-domain energy
+  // glossaries). Study topics are drillable by everyone but stay out of buzzer
+  // scoring, which is owner-driven and ignores unowned topics.
+  const { data: teamTopicRows, error: teamTopicsError } = await supabase
+    .from("topics")
+    .select("id, name, display_order")
+    .eq("team_id", activePlayer.team_id)
+    .is("retired_at", null)
+    .order("display_order");
+
+  if (teamTopicsError || !teamTopicRows) {
+    return NextResponse.json(
+      { error: teamTopicsError?.message ?? "Could not load topics." },
+      { status: 500 }
+    );
+  }
+
+  const teamTopicIds = teamTopicRows.map((topic) => topic.id as string);
+  const { data: ownedRows, error: ownedError } = teamTopicIds.length
+    ? await supabase
+        .from("topic_assignments")
+        .select("topic_id")
+        .in("topic_id", teamTopicIds)
+        .is("unassigned_at", null)
+    : { data: [] as { topic_id: string }[], error: null };
+
+  if (ownedError) {
+    return NextResponse.json({ error: ownedError.message }, { status: 500 });
+  }
+
+  const ownedTopicIds = new Set((ownedRows ?? []).map((row) => row.topic_id as string));
+  const assignedSet = new Set(assignedTopicIds);
+  const studyTopicIds = teamTopicIds.filter((id) => !ownedTopicIds.has(id));
+  const drillableTopicIds = [...new Set([...assignedTopicIds, ...studyTopicIds])];
+
+  if (!drillableTopicIds.length) {
     return NextResponse.json({ data: emptyQueue() });
   }
+
+  const kindByTopicId = new Map<string, DrillTopicKind>(
+    drillableTopicIds.map((id) => [id, assignedSet.has(id) ? "assigned" : "study"])
+  );
 
   try {
     const url = new URL(request.url);
@@ -211,30 +251,23 @@ export async function GET(request: Request) {
     const mode = parseDrillMode(searchParams.get("mode"));
     const limitOverride =
       searchParams.get("limitOverride") === "true" || searchParams.get("overrideLimit") === "true";
-    const selectedTopicIds = resolveSelectedTopicIds(activeTopicIds, readRequestedTopicIds(searchParams));
+    const selectedTopicIds = resolveSelectedTopicIds(
+      drillableTopicIds,
+      readRequestedTopicIds(searchParams),
+      assignedTopicIds
+    );
     const today = todayDateOnly();
 
-    const [
-      { data: topicRows, error: topicsError },
-      questionRows,
-      progressRows,
-      responseRows,
-      newCardsIntroducedToday
-    ] = await Promise.all([
-      supabase
-        .from("topics")
-        .select("id, name, display_order")
-        .in("id", activeTopicIds)
-        .order("display_order"),
+    const [questionRows, progressRows, responseRows, newCardsIntroducedToday] = await Promise.all([
       fetchAllPages<QueueQuestionRow>(
         (from, to) =>
           supabase
             .from("questions")
             .select("id, topic_id, question, answer, accepted_answers, metadata, display_order")
-            .in("topic_id", activeTopicIds)
+            .in("topic_id", drillableTopicIds)
             .order("display_order")
             .range(from, to),
-        "Could not load assigned questions"
+        "Could not load drillable questions"
       ),
       fetchAllPages<{
         question_id: string;
@@ -263,15 +296,15 @@ export async function GET(request: Request) {
       countNewCardsIntroducedToday(supabase, activePlayer.id)
     ]);
 
-    if (topicsError || !topicRows) {
-      return NextResponse.json({ error: topicsError?.message ?? "Could not load topics." }, { status: 500 });
-    }
-
-    const topics = topicRows.map((topic) => ({
-      id: topic.id as string,
-      name: topic.name as string,
-      displayOrder: Number(topic.display_order ?? 0)
-    }));
+    const drillableSet = new Set(drillableTopicIds);
+    const topics = teamTopicRows
+      .filter((topic) => drillableSet.has(topic.id as string))
+      .map((topic) => ({
+        id: topic.id as string,
+        name: topic.name as string,
+        displayOrder: Number(topic.display_order ?? 0),
+        kind: kindByTopicId.get(topic.id as string) ?? "study"
+      }));
     const questions = questionRows.map<QueueQuestion>((question) => ({
       id: question.id,
       topicId: question.topic_id,

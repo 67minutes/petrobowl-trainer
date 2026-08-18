@@ -1,6 +1,6 @@
 export type SessionTopicMode = "topics" | "playerAssigned" | "playerAssignedPlus";
 export type DatabaseSessionTopicMode = "topics" | "player_assigned" | "player_assigned_plus";
-export type SessionTopicSource = "manual" | "assigned" | "extra" | "legacy";
+export type SessionTopicSource = "manual" | "assigned" | "extra" | "legacy" | "bonus";
 
 export type SessionPoolTopic = {
   id: string;
@@ -24,11 +24,14 @@ export type EligibleSessionQuestion = {
   assignedTo: string | null;
   owners: string[];
   balanceGroup: string;
+  isBonus: boolean;
 };
 
 export type SessionQuestionPool = {
   topicSources: Map<string, SessionTopicSource>;
   questions: EligibleSessionQuestion[];
+  // Unowned "bonus" questions drawn from study topics; scored purely additively.
+  bonusQuestions: EligibleSessionQuestion[];
 };
 
 const DATABASE_TOPIC_MODES: Record<SessionTopicMode, DatabaseSessionTopicMode> = {
@@ -59,6 +62,7 @@ export function buildSessionQuestionPool(input: {
   topicMode: SessionTopicMode;
   participantIds: string[];
   selectedTopicIds?: string[];
+  bonusTopicIds?: string[];
   topics: SessionPoolTopic[];
   assignments: SessionPoolAssignment[];
   questions: SessionPoolQuestion[];
@@ -78,6 +82,11 @@ export function buildSessionQuestionPool(input: {
     throw new Error("Selected topic not found.");
   }
 
+  // Bonus topics are handled separately (unowned, additive scoring) and never
+  // participate in the regular owned/manual pool, even if also selected there.
+  const bonusTopicIds = unique(input.bonusTopicIds ?? []).filter((topicId) => knownTopicIds.has(topicId));
+  const bonusTopicSet = new Set(bonusTopicIds);
+
   const ownersByTopicId = new Map<string, string[]>();
   for (const assignment of input.assignments) {
     if (knownTopicIds.has(assignment.topicId)) {
@@ -93,10 +102,15 @@ export function buildSessionQuestionPool(input: {
 
   if (input.topicMode === "topics") {
     for (const topicId of selectedTopicIds) {
-      topicSources.set(topicId, "manual");
+      if (!bonusTopicSet.has(topicId)) {
+        topicSources.set(topicId, "manual");
+      }
     }
   } else {
     for (const topic of input.topics) {
+      if (bonusTopicSet.has(topic.id)) {
+        continue;
+      }
       const owners = ownersByTopicId.get(topic.id) ?? [];
       if (owners.some((ownerId) => participantSet.has(ownerId))) {
         topicSources.set(topic.id, "assigned");
@@ -105,7 +119,7 @@ export function buildSessionQuestionPool(input: {
 
     if (input.topicMode === "playerAssignedPlus") {
       for (const topicId of selectedTopicIds) {
-        if (!topicSources.has(topicId)) {
+        if (!topicSources.has(topicId) && !bonusTopicSet.has(topicId)) {
           topicSources.set(topicId, "extra");
         }
       }
@@ -141,7 +155,8 @@ export function buildSessionQuestionPool(input: {
       termKey: group.representative.termKey,
       assignedTo: primaryOwner,
       owners,
-      balanceGroup: primaryOwner ?? "extra"
+      balanceGroup: primaryOwner ?? "extra",
+      isBonus: false
     };
   });
 
@@ -149,8 +164,30 @@ export function buildSessionQuestionPool(input: {
     throw new Error("No eligible questions.");
   }
 
+  // Bonus pool: unowned study-topic questions, term-deduped, tagged so scoring
+  // and the buzzer treat them as additive (no owner, no steal, no penalty).
+  for (const topicId of bonusTopicIds) {
+    topicSources.set(topicId, "bonus");
+  }
+  const bonusGroups = new Map<string, SessionPoolQuestion>();
+  for (const question of input.questions) {
+    if (bonusTopicSet.has(question.topicId) && !bonusGroups.has(question.termKey)) {
+      bonusGroups.set(question.termKey, question);
+    }
+  }
+  const bonusQuestions = [...bonusGroups.values()].map<EligibleSessionQuestion>((question) => ({
+    id: question.id,
+    topicId: question.topicId,
+    termKey: question.termKey,
+    assignedTo: null,
+    owners: [],
+    balanceGroup: "bonus",
+    isBonus: true
+  }));
+
   return {
     topicSources,
-    questions
+    questions,
+    bonusQuestions
   };
 }

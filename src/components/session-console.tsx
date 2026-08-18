@@ -59,6 +59,8 @@ export function SessionConsole() {
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [topicMode, setTopicMode] = useState<SessionTopicMode>("playerAssigned");
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  const [bonusTopicIds, setBonusTopicIds] = useState<string[]>([]);
+  const [bonusCount, setBonusCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +140,20 @@ export function SessionConsole() {
     };
   }, [data?.topics, participantIds, selectedTopicIds, topicMode]);
 
+  // Bonus questions come from unowned "study" topics (e.g. the energy glossaries)
+  // and score additively (+5 each, no penalty). They are independent of the
+  // regular topic mode above.
+  const studyTopics = useMemo(
+    () => (data?.topics ?? []).filter((topic) => topic.ownerIds.length === 0),
+    [data?.topics]
+  );
+  const availableBonusQuestions = useMemo(() => {
+    const selected = new Set(bonusTopicIds);
+    return studyTopics
+      .filter((topic) => selected.has(topic.id))
+      .reduce((sum, topic) => sum + topic.questionCount, 0);
+  }, [studyTopics, bonusTopicIds]);
+
   async function startSession() {
     const token = session?.access_token;
 
@@ -160,7 +176,9 @@ export function SessionConsole() {
           numQuestions,
           participantIds,
           topicMode,
-          topicIds: selectedTopicIds
+          topicIds: selectedTopicIds,
+          bonusTopicIds,
+          bonusCount
         })
       });
       const payload = (await response.json()) as StartResponse;
@@ -197,12 +215,14 @@ export function SessionConsole() {
 
   const topicGroups = groupTopicsByOwner(data.topics);
   const requiresTopicPicker = topicMode === "topics" || topicMode === "playerAssignedPlus";
+  const bonusInvalid = bonusCount < 0 || bonusCount > availableBonusQuestions;
   const startDisabled =
     submitting ||
     participantIds.length === 0 ||
     preview.topicCount === 0 ||
     numQuestions < 1 ||
-    numQuestions > preview.availableQuestions;
+    numQuestions > preview.availableQuestions ||
+    bonusInvalid;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -348,6 +368,60 @@ export function SessionConsole() {
                 </div>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {studyTopics.length > 0 ? (
+          <section className="rounded border border-ink-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-ink-900">Bonus topics</h2>
+            <p className="mt-1 text-sm text-ink-500">
+              Study glossaries mixed in as bonus questions — +5 each when answered right, no owner,
+              no steal, no penalty.
+            </p>
+
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {studyTopics.map((topic) => {
+                const selected = bonusTopicIds.includes(topic.id);
+
+                return (
+                  <button
+                    key={topic.id}
+                    type="button"
+                    onClick={() => setBonusTopicIds((current) => toggleId(current, topic.id))}
+                    className={`focus-ring flex min-h-16 items-center justify-between gap-3 rounded border px-3 py-2 text-left transition ${
+                      selected ? "border-gold-500 bg-gold-500/10" : "border-ink-200 bg-white hover:border-ink-300"
+                    }`}
+                  >
+                    <span>
+                      <span className="block text-sm font-medium text-ink-900">{topic.name}</span>
+                      <span className="block text-xs text-ink-500">
+                        {topic.questionCount.toLocaleString()} questions
+                      </span>
+                    </span>
+                    {selected ? <Check aria-hidden className="h-4 w-4 shrink-0 text-gold-600" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="text-sm font-medium text-ink-900" htmlFor="bonus-count">
+                Bonus questions
+              </label>
+              <input
+                id="bonus-count"
+                type="number"
+                min={0}
+                max={availableBonusQuestions}
+                value={bonusCount}
+                onChange={(event) => setBonusCount(Number(event.target.value))}
+                className="focus-ring w-24 rounded border border-ink-200 bg-white px-3 py-2 text-sm"
+              />
+              <span className="text-xs text-ink-500">{availableBonusQuestions} available</span>
+            </div>
+            {bonusInvalid ? (
+              <p className="mt-2 text-sm text-red-600">Bonus count exceeds the selected bonus pool.</p>
+            ) : null}
           </section>
         ) : null}
       </div>

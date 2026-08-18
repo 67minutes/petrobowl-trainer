@@ -1,9 +1,10 @@
-import type { DrillMode, DrillTopicOption } from "@/types/drill";
+import type { DrillMode, DrillTopicKind, DrillTopicOption } from "@/types/drill";
 
 export type QueueTopic = {
   id: string;
   name: string;
   displayOrder: number;
+  kind: DrillTopicKind;
 };
 
 export type QueueQuestion = {
@@ -47,10 +48,17 @@ export function parseDrillMode(value: string | null): DrillMode {
   return value && validModes.has(value as DrillMode) ? (value as DrillMode) : "smart";
 }
 
-export function resolveSelectedTopicIds(activeTopicIds: string[], requestedTopicIds: string[]) {
-  const active = new Set(activeTopicIds);
-  const requested = [...new Set(requestedTopicIds)].filter((topicId) => active.has(topicId));
-  return requested.length ? requested : activeTopicIds;
+// Filters requested topics to the valid (drillable) set; when nothing valid is
+// requested, falls back to `defaultTopicIds` (assigned-only by default, so the
+// opt-in study topics are not pulled into a plain "all topics" run).
+export function resolveSelectedTopicIds(
+  validTopicIds: string[],
+  requestedTopicIds: string[],
+  defaultTopicIds: string[] = validTopicIds
+) {
+  const valid = new Set(validTopicIds);
+  const requested = [...new Set(requestedTopicIds)].filter((topicId) => valid.has(topicId));
+  return requested.length ? requested : defaultTopicIds;
 }
 
 export function isWeakCard(
@@ -112,6 +120,7 @@ export function buildTopicOptions(
       return {
         id: topic.id,
         name: topicById.get(topic.id)?.name ?? "Topic",
+        kind: topic.kind,
         assignedQuestions: topicQuestions.length,
         dueCount,
         unseenCount: topicQuestions.filter((question) => !progressByQuestionId.has(question.id)).length,

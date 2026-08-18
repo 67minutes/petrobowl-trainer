@@ -19,16 +19,24 @@ const progressRows = [
 ];
 
 describe("drill queue helpers", () => {
-  it("keeps requested topics inside active assignments", () => {
+  it("keeps requested topics inside the valid set", () => {
     expect(resolveSelectedTopicIds(["t1", "t2"], ["t2", "unassigned"])).toEqual(["t2"]);
     expect(resolveSelectedTopicIds(["t1", "t2"], ["unassigned"])).toEqual(["t1", "t2"]);
   });
 
-  it("builds topic options with due, unseen, mastered, and weak counts", () => {
+  it("falls back to the default set (assigned only) when nothing valid is requested", () => {
+    // Valid = assigned + study; default = assigned only, so study topics are opt-in.
+    expect(resolveSelectedTopicIds(["t1", "t2", "s1"], [], ["t1", "t2"])).toEqual(["t1", "t2"]);
+    expect(resolveSelectedTopicIds(["t1", "t2", "s1"], ["unknown"], ["t1", "t2"])).toEqual(["t1", "t2"]);
+    // A study topic is a valid explicit selection.
+    expect(resolveSelectedTopicIds(["t1", "t2", "s1"], ["s1"], ["t1", "t2"])).toEqual(["s1"]);
+  });
+
+  it("builds topic options with kind plus due, unseen, mastered, and weak counts", () => {
     const options = buildTopicOptions(
       [
-        { id: "t1", name: "Drilling", displayOrder: 1 },
-        { id: "t2", name: "Production", displayOrder: 2 }
+        { id: "t1", name: "Drilling", displayOrder: 1, kind: "assigned" },
+        { id: "t2", name: "Production", displayOrder: 2, kind: "assigned" }
       ],
       questions,
       progressRows,
@@ -38,6 +46,7 @@ describe("drill queue helpers", () => {
 
     expect(options[0]).toMatchObject({
       id: "t1",
+      kind: "assigned",
       assignedQuestions: 2,
       dueCount: 1,
       unseenCount: 0,
@@ -46,11 +55,23 @@ describe("drill queue helpers", () => {
     });
     expect(options[1]).toMatchObject({
       id: "t2",
+      kind: "assigned",
       assignedQuestions: 2,
       dueCount: 0,
       unseenCount: 1,
       masteredCount: 1
     });
+  });
+
+  it("carries the study kind through to the option", () => {
+    const options = buildTopicOptions(
+      [{ id: "s1", name: "Hydrogen", displayOrder: 22, kind: "study" }],
+      [{ id: "sq1", topicId: "s1", displayOrder: 1 }],
+      [],
+      new Map(),
+      "2026-06-08"
+    );
+    expect(options[0]).toMatchObject({ id: "s1", kind: "study", assignedQuestions: 1 });
   });
 
   it("orders Smart, Due, Weak, and New modes predictably", () => {

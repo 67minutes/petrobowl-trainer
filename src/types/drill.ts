@@ -26,9 +26,14 @@ export type DrillQueueStats = {
   weakCards: number;
 };
 
+export type DrillTopicKind = "assigned" | "study";
+
 export type DrillTopicOption = {
   id: string;
   name: string;
+  // "assigned" = a topic this player owns; "study" = a team topic nobody owns
+  // (e.g. the public-domain energy glossaries), drillable by everyone as an extra.
+  kind: DrillTopicKind;
   assignedQuestions: number;
   dueCount: number;
   unseenCount: number;

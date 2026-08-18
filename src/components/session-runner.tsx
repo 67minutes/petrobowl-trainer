@@ -156,9 +156,21 @@ export function SessionRunner({ sessionId }: { sessionId: string }) {
               </div>
 
               <div className="py-7">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
-                  {current.topicName ?? "Topic"} / {current.ownerNames.length ? current.ownerNames.join(" & ") : "Unowned"}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-petrol-600">
+                    {current.topicName ?? "Topic"} /{" "}
+                    {current.isBonus
+                      ? "Bonus"
+                      : current.ownerNames.length
+                        ? current.ownerNames.join(" & ")
+                        : "Unowned"}
+                  </p>
+                  {current.isBonus ? (
+                    <span className="inline-flex items-center rounded-full bg-gold-500/15 px-2.5 py-0.5 text-xs font-bold text-gold-600">
+                      Bonus +5
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-3 text-2xl font-semibold leading-9 text-ink-900">{current.question}</p>
                 <p className="mt-4 text-lg text-ink-600">
                   Answer:{" "}
@@ -329,6 +341,9 @@ export function SessionRunner({ sessionId }: { sessionId: string }) {
                     <p className="text-sm font-medium text-ink-900">{player.name}</p>
                     <p className="text-xs text-ink-500">
                       D {score?.defenseScore ?? 0} / O {score?.offenseBonus ?? 0}
+                      {score?.bonusPoints ? (
+                        <span className="font-medium text-gold-600"> / B +{score.bonusPoints}</span>
+                      ) : null}
                     </p>
                   </div>
                   <p className="text-xl font-semibold text-ink-900">{score?.totalScore ?? 0}</p>

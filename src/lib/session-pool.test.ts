@@ -28,8 +28,17 @@ describe("buildSessionQuestionPool", () => {
 
     expect([...pool.topicSources.entries()]).toEqual([["t2", "manual"]]);
     expect(pool.questions).toEqual([
-      { id: "q3", topicId: "t2", termKey: "gamma", assignedTo: "p2", owners: ["p2"], balanceGroup: "p2" }
+      {
+        id: "q3",
+        topicId: "t2",
+        termKey: "gamma",
+        assignedTo: "p2",
+        owners: ["p2"],
+        balanceGroup: "p2",
+        isBonus: false
+      }
     ]);
+    expect(pool.bonusQuestions).toEqual([]);
   });
 
   it("builds a player-assigned pool from selected participants", () => {
@@ -128,6 +137,53 @@ describe("buildSessionQuestionPool", () => {
     });
 
     expect([...pool.questions[0].owners].sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("builds unowned bonus questions from bonus topics, separate from the regular pool", () => {
+    const pool = buildSessionQuestionPool({
+      topicMode: "playerAssigned",
+      participantIds: ["p1"],
+      selectedTopicIds: [],
+      topics: [{ id: "t1" }, { id: "s1" }],
+      assignments: [{ topicId: "t1", playerId: "p1" }],
+      questions: [
+        { id: "q1", topicId: "t1", termKey: "alpha" },
+        { id: "b1", topicId: "s1", termKey: "hydro" },
+        { id: "b2", topicId: "s1", termKey: "solar" }
+      ],
+      bonusTopicIds: ["s1"]
+    });
+
+    expect(pool.topicSources.get("s1")).toBe("bonus");
+    // Regular pool is untouched and never bonus.
+    expect(pool.questions.map((question) => question.id)).toEqual(["q1"]);
+    expect(pool.questions.every((question) => question.isBonus === false)).toBe(true);
+    // Bonus pool: unowned, tagged, balanced together.
+    expect(pool.bonusQuestions.map((question) => question.id).sort()).toEqual(["b1", "b2"]);
+    expect(pool.bonusQuestions[0]).toMatchObject({
+      assignedTo: null,
+      owners: [],
+      balanceGroup: "bonus",
+      isBonus: true
+    });
+  });
+
+  it("dedupes bonus questions by term key across bonus topics", () => {
+    const pool = buildSessionQuestionPool({
+      topicMode: "playerAssigned",
+      participantIds: ["p1"],
+      selectedTopicIds: [],
+      topics: [{ id: "t1" }, { id: "s1" }, { id: "s2" }],
+      assignments: [{ topicId: "t1", playerId: "p1" }],
+      questions: [
+        { id: "q1", topicId: "t1", termKey: "alpha" },
+        { id: "b1", topicId: "s1", termKey: "dup" },
+        { id: "b2", topicId: "s2", termKey: "dup" }
+      ],
+      bonusTopicIds: ["s1", "s2"]
+    });
+
+    expect(pool.bonusQuestions).toHaveLength(1);
   });
 
   it("rejects empty participants, topics, and question pools", () => {
