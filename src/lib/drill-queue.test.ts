@@ -127,4 +127,64 @@ describe("drill queue helpers", () => {
       })
     ).toBeNull();
   });
+
+  describe("weak mode rotation", () => {
+    const weakQuestions = [
+      { id: "w1", topicId: "t1", displayOrder: 1 },
+      { id: "w2", topicId: "t1", displayOrder: 2 },
+      { id: "w3", topicId: "t2", displayOrder: 1 }
+    ];
+    const weakProgress = [
+      { questionId: "w1", easeFactor: 2.5, intervalDays: 3, repetitions: 1, nextReview: "2026-06-20" },
+      { questionId: "w2", easeFactor: 2.5, intervalDays: 3, repetitions: 1, nextReview: "2026-06-20" },
+      { questionId: "w3", easeFactor: 2.5, intervalDays: 3, repetitions: 1, nextReview: "2026-06-20" }
+    ];
+    const pick = (stats: Map<string, { againCount: number; averageResponseTimeMs: number; lastReviewedAt: string | null }>, progress = weakProgress) =>
+      selectNextQuestion({
+        mode: "weak",
+        today: "2026-06-08",
+        now: "2026-06-08T12:00:00Z",
+        questions: weakQuestions,
+        progressRows: progress,
+        responseStatsByQuestionId: stats,
+        selectedTopicIds: ["t1", "t2"],
+        remainingNewCardsToday: 0
+      })?.id;
+
+    it("does not let an idle, huge response time pin one card to the top", () => {
+      const stats = new Map([
+        ["w1", { againCount: 0, averageResponseTimeMs: 360_000, lastReviewedAt: "2026-06-01T00:00:00Z" }],
+        ["w2", { againCount: 3, averageResponseTimeMs: 15_000, lastReviewedAt: "2026-06-01T00:00:00Z" }]
+      ]);
+      expect(pick(stats)).toBe("w2");
+    });
+
+    it("skips a card answered within the cooldown", () => {
+      const stats = new Map([
+        ["w1", { againCount: 3, averageResponseTimeMs: 15_000, lastReviewedAt: "2026-06-08T11:58:00Z" }],
+        ["w2", { againCount: 1, averageResponseTimeMs: 15_000, lastReviewedAt: "2026-06-07T00:00:00Z" }]
+      ]);
+      expect(pick(stats)).toBe("w2");
+    });
+
+    it("breaks ties toward the least recently reviewed card", () => {
+      const stats = new Map([
+        ["w1", { againCount: 1, averageResponseTimeMs: 0, lastReviewedAt: "2026-06-05T00:00:00Z" }],
+        ["w2", { againCount: 1, averageResponseTimeMs: 0, lastReviewedAt: "2026-06-01T00:00:00Z" }],
+        ["w3", { againCount: 1, averageResponseTimeMs: 0, lastReviewedAt: "2026-06-03T00:00:00Z" }]
+      ]);
+      expect(pick(stats)).toBe("w2");
+    });
+
+    it("drops a card from the weak pool once it recovers to a mastered interval", () => {
+      const progress = [
+        { questionId: "w1", easeFactor: 2.65, intervalDays: 163, repetitions: 8, nextReview: "2026-11-01" },
+        weakProgress[1]
+      ];
+      const stats = new Map([
+        ["w1", { againCount: 1, averageResponseTimeMs: 0, lastReviewedAt: "2026-06-01T00:00:00Z" }]
+      ]);
+      expect(pick(stats, progress)).toBe("w2");
+    });
+  });
 });

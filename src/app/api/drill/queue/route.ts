@@ -3,6 +3,7 @@ import { DAILY_NEW_CARD_LIMIT } from "@/lib/constants";
 import {
   buildTopicOptions,
   isWeakCard,
+  MAX_COUNTED_RESPONSE_MS,
   parseDrillMode,
   resolveSelectedTopicIds,
   selectNextQuestion,
@@ -142,7 +143,7 @@ function buildResponseStats(
       lastReviewedAt: null
     };
     current.againCount += row.rating === "again" ? 1 : 0;
-    current.responseTimeTotal += row.response_time_ms;
+    current.responseTimeTotal += Math.min(row.response_time_ms, MAX_COUNTED_RESPONSE_MS);
     current.responseCount += 1;
     current.lastReviewedAt =
       !current.lastReviewedAt || row.reviewed_at > current.lastReviewedAt ? row.reviewed_at : current.lastReviewedAt;
