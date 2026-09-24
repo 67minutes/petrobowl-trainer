@@ -40,6 +40,8 @@ export type QueueSelectionInput = {
   responseStatsByQuestionId: Map<string, QueueResponseStats>;
   selectedTopicIds: string[];
   remainingNewCardsToday: number;
+  // ISO timestamp for the weak-mode cooldown; defaults to the current time.
+  now?: string;
 };
 
 const validModes = new Set<DrillMode>(["smart", "due", "weak", "new"]);
@@ -61,11 +63,23 @@ export function resolveSelectedTopicIds(
   return requested.length ? requested : defaultTopicIds;
 }
 
+// Past Again marks only count until the card has recovered to a mastered
+// interval; otherwise one old miss would keep a card "weak" forever.
+const MASTERED_INTERVAL_DAYS = 21;
+// Response times past this are treated as idle (tab left open), not slowness.
+export const MAX_COUNTED_RESPONSE_MS = 60_000;
+// Weak mode skips cards answered this recently so rating one moves you on.
+const WEAK_COOLDOWN_MS = 10 * 60_000;
+
 export function isWeakCard(
   progress: Pick<QueueProgress, "easeFactor" | "intervalDays">,
   stats: QueueResponseStats | undefined
 ) {
-  return progress.easeFactor < 2 || progress.intervalDays < 7 || (stats?.againCount ?? 0) > 0;
+  return (
+    progress.easeFactor < 2 ||
+    progress.intervalDays < 7 ||
+    ((stats?.againCount ?? 0) > 0 && progress.intervalDays < MASTERED_INTERVAL_DAYS)
+  );
 }
 
 export function calculateWeaknessScore(
@@ -74,7 +88,8 @@ export function calculateWeaknessScore(
 ) {
   const easePressure = Math.max(0, 2.5 - progress.easeFactor) * 18;
   const againPressure = (stats?.againCount ?? 0) * 12;
-  const slowPressure = Math.max(0, (stats?.averageResponseTimeMs ?? 0) - 12_000) / 1_500;
+  const averageMs = Math.min(stats?.averageResponseTimeMs ?? 0, MAX_COUNTED_RESPONSE_MS);
+  const slowPressure = Math.max(0, averageMs - 12_000) / 1_500;
   const lowIntervalPressure = Math.max(0, 7 - progress.intervalDays) * 2;
   return easePressure + againPressure + slowPressure + lowIntervalPressure;
 }
@@ -177,7 +192,8 @@ export function selectNextQuestion(input: QueueSelectionInput) {
       if (scoreDifference !== 0) {
         return scoreDifference;
       }
-      return right.lastReviewedAt.localeCompare(left.lastReviewedAt);
+      // Least recently reviewed first, so ties rotate instead of repeating.
+      return left.lastReviewedAt.localeCompare(right.lastReviewedAt);
     });
 
   if (input.mode === "due") {
@@ -185,7 +201,9 @@ export function selectNextQuestion(input: QueueSelectionInput) {
   }
 
   if (input.mode === "weak") {
-    return weakQuestions[0]?.question ?? null;
+    const cooldownStart = new Date(Date.parse(input.now ?? new Date().toISOString()) - WEAK_COOLDOWN_MS).toISOString();
+    const rested = weakQuestions.filter((entry) => !entry.lastReviewedAt || entry.lastReviewedAt < cooldownStart);
+    return (rested[0] ?? weakQuestions[0])?.question ?? null;
   }
 
   if (input.mode === "new") {
