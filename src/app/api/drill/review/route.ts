@@ -72,8 +72,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: assignmentError.message }, { status: 500 });
   }
 
+  // Unassigned questions are still reviewable when they belong to a study-only
+  // topic: a non-retired team topic nobody owns (same rule as the drill queue).
   if (!assignment) {
-    return NextResponse.json({ error: "Question not assigned." }, { status: 403 });
+    const [{ data: topic, error: topicError }, { count: ownerCount, error: ownersError }] = await Promise.all([
+      supabase
+        .from("topics")
+        .select("id")
+        .eq("id", question.topic_id)
+        .eq("team_id", activePlayer.team_id)
+        .is("retired_at", null)
+        .maybeSingle(),
+      supabase
+        .from("topic_assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("topic_id", question.topic_id)
+        .is("unassigned_at", null)
+    ]);
+
+    if (topicError || ownersError) {
+      return NextResponse.json({ error: (topicError ?? ownersError)?.message }, { status: 500 });
+    }
+
+    if (!topic || (ownerCount ?? 0) > 0) {
+      return NextResponse.json({ error: "Question not assigned." }, { status: 403 });
+    }
   }
 
   const { data: progress, error: progressError } = await supabase
