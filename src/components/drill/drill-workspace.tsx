@@ -1,12 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Crosshair, ListChecks, Plus, RotateCcw, Sparkles, Target } from "lucide-react";
+import { Check, Crosshair, ListChecks, Plus, RotateCcw, Sparkles, Target, Timer } from "lucide-react";
 import { clsx } from "clsx";
 import { DrillCard, type ReviewOutcome } from "@/components/drill-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { fireConfetti } from "@/components/gamification/confetti";
 import { parseDrillMode } from "@/lib/drill-queue";
+import {
+  describeLearning,
+  pickLearningCard,
+  scheduleLearning,
+  upsertLearning,
+  type LearningEntry
+} from "@/lib/learning-steps";
+import type { ReviewRating } from "@/lib/sm2";
 import { StatRow } from "@/components/stat-row";
 import type { DrillMode, DrillQueueData } from "@/types/drill";
 
@@ -27,6 +35,19 @@ const modes: { id: DrillMode; label: string; detail: string }[] = [
 ];
 
 const sessionTargets = [10, 20, 40];
+
+const LEARNING_STORAGE_KEY = "drill.learningSteps";
+
+function readInitialLearningEnabled() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(LEARNING_STORAGE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
 
 function readInitialMode() {
   if (typeof window === "undefined") {
@@ -58,12 +79,18 @@ export function DrillWorkspace() {
   const [sessionTarget, setSessionTarget] = useState(20);
   const [reviewedInRun, setReviewedInRun] = useState(0);
   const [runStats, setRunStats] = useState<RunStats>(EMPTY_RUN);
+  const [learningEnabled, setLearningEnabled] = useState(readInitialLearningEnabled);
+  const [learning, setLearning] = useState<LearningEntry[]>([]);
+  // A learning card being re-shown in place of the server queue's card.
+  const [practice, setPractice] = useState<LearningEntry | null>(null);
+  // Bumped per presented card so a re-show of the same question remounts fresh.
+  const [presentSerial, setPresentSerial] = useState(0);
 
-  const loadQueue = useCallback(async () => {
+  const loadQueue = useCallback(async (): Promise<DrillQueueData | null> => {
     if (!session?.access_token) {
       setData(null);
       setLoading(false);
-      return;
+      return null;
     }
 
     setLoading(true);
@@ -92,8 +119,10 @@ export function DrillWorkspace() {
       }
 
       setData(payload.data);
+      return payload.data;
     } catch (queueError) {
       setError(queueError instanceof Error ? queueError.message : "Queue unavailable.");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -107,6 +136,7 @@ export function DrillWorkspace() {
     setLimitOverride(false);
     setReviewedInRun(0);
     setRunStats(EMPTY_RUN);
+    setPractice(null);
   }, [mode, selectedTopicIds, sessionTarget]);
 
   const selectedTopicSet = useMemo(() => new Set(selectedTopicIds), [selectedTopicIds]);
@@ -128,7 +158,8 @@ export function DrillWorkspace() {
     data.stats.unseenQuestions > 0 &&
     data.stats.newCards === 0 &&
     (data.mode === "new" || data.stats.dueReviews === 0);
-  const sessionGoalReached = Boolean(data?.card) && reviewedInRun >= sessionTarget;
+  const presentedCard = practice?.card ?? data?.card ?? null;
+  const sessionGoalReached = Boolean(presentedCard) && reviewedInRun >= sessionTarget;
   const perfectRun = runStats.total > 0 && runStats.correct === runStats.total;
   const runAccuracy = runStats.total === 0 ? 0 : Math.round((runStats.correct / runStats.total) * 100);
 
@@ -139,6 +170,29 @@ export function DrillWorkspace() {
     // Fire once when the goal is first reached.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionGoalReached]);
+
+  function toggleLearning() {
+    const next = !learningEnabled;
+    setLearningEnabled(next);
+    if (!next) {
+      setLearning([]);
+      setPractice(null);
+    }
+    try {
+      window.localStorage.setItem(LEARNING_STORAGE_KEY, next ? "on" : "off");
+    } catch {
+      // The preference just will not persist.
+    }
+  }
+
+  function previewLearning(rating: ReviewRating) {
+    if (!presentedCard) {
+      return "";
+    }
+    const now = Date.now();
+    const previous = learning.find((entry) => entry.card.questionId === presentedCard.questionId);
+    return describeLearning(scheduleLearning(presentedCard, previous, rating, now), now);
+  }
 
   function selectMode(nextMode: DrillMode) {
     setMode(nextMode);
@@ -173,7 +227,31 @@ export function DrillWorkspace() {
       total: current.total + 1,
       maxCombo: Math.max(current.maxCombo, outcome.award?.combo ?? 0)
     }));
-    await loadQueue();
+
+    let nextLearning = learning;
+    if (learningEnabled && presentedCard) {
+      const previous = learning.find((entry) => entry.card.questionId === presentedCard.questionId);
+      nextLearning = upsertLearning(
+        learning,
+        presentedCard.questionId,
+        scheduleLearning(presentedCard, previous, outcome.rating, Date.now())
+      );
+      setLearning(nextLearning);
+    }
+
+    const fresh = await loadQueue();
+    const now = Date.now();
+    // A due learning card jumps the queue. If the queue is empty, or it hands
+    // back a card that is still in learning, re-show the soonest learning card
+    // rather than stalling or sending a second SRS review for it today.
+    const queueCardInLearning = nextLearning.some((entry) => entry.card.questionId === fresh?.card?.questionId);
+    setPractice(
+      learningEnabled
+        ? pickLearningCard(nextLearning, now) ??
+            (!fresh?.card || queueCardInLearning ? pickLearningCard(nextLearning, now, true) : null)
+        : null
+    );
+    setPresentSerial((current) => current + 1);
   }
 
   if (loading) {
@@ -322,6 +400,27 @@ export function DrillWorkspace() {
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                onClick={toggleLearning}
+                aria-pressed={learningEnabled}
+                className={clsx(
+                  "focus-ring mt-2 flex w-full items-center gap-3 rounded border px-3 py-2 text-left transition",
+                  learningEnabled
+                    ? "border-petrol-600 bg-petrol-600 text-white"
+                    : "border-ink-200 bg-white text-ink-700 hover:border-petrol-500 hover:text-petrol-600"
+                )}
+              >
+                <Timer aria-hidden className="h-4 w-4 shrink-0" />
+                <span>
+                  <span className="block text-sm font-semibold">
+                    Learning steps {learningEnabled ? "on" : "off"}
+                  </span>
+                  <span className={clsx("text-xs", learningEnabled ? "text-white/80" : "text-ink-500")}>
+                    Missed cards come back in minutes, not tomorrow
+                  </span>
+                </span>
+              </button>
             </div>
           </div>
         </section>
@@ -376,6 +475,15 @@ export function DrillWorkspace() {
               Start another set
             </button>
           </section>
+        ) : practice ? (
+          <DrillCard
+            key={presentSerial}
+            card={practice.card}
+            accessToken={session?.access_token ?? ""}
+            onReviewed={handleReviewed}
+            practice
+            describeLearning={previewLearning}
+          />
         ) : dailyLimitReached ? (
           <section className="surface rounded p-5">
             <h2 className="text-lg font-semibold text-ink-900">Daily new-card limit reached</h2>
@@ -392,7 +500,13 @@ export function DrillWorkspace() {
             </button>
           </section>
         ) : (
-          <DrillCard card={data.card} accessToken={session?.access_token ?? ""} onReviewed={handleReviewed} />
+          <DrillCard
+            key={presentSerial}
+            card={data.card}
+            accessToken={session?.access_token ?? ""}
+            onReviewed={handleReviewed}
+            describeLearning={learningEnabled ? previewLearning : undefined}
+          />
         )}
       </div>
 
@@ -405,6 +519,7 @@ export function DrillWorkspace() {
             </p>
           </div>
           <div className="mt-3">
+            {learningEnabled ? <StatRow label="Learning" value={String(learning.length)} tone="warn" /> : null}
             <StatRow label="Due reviews" value={String(data.stats.dueReviews)} tone="warn" />
             <StatRow label="Weak cards" value={String(data.stats.weakCards)} />
             <StatRow label="New cards" value={String(data.stats.newCards)} />

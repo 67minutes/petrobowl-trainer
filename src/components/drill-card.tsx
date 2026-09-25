@@ -30,6 +30,7 @@ const ratings: { id: ReviewRating; label: string; detail: string }[] = [
 
 export type ReviewOutcome = {
   correct: boolean;
+  rating: ReviewRating;
   award: AwardSummary | null;
 };
 
@@ -37,6 +38,10 @@ type DrillCardProps = {
   card: DrillQueueCard | null;
   accessToken: string;
   onReviewed: (outcome: ReviewOutcome) => Promise<void>;
+  // A learning-step re-show: rated locally, never sent to the SRS.
+  practice?: boolean;
+  // Learning-steps hint for a rating (e.g. "Back in 1 min"), when enabled.
+  describeLearning?: (rating: ReviewRating) => string;
 };
 
 type ReviewResponse = {
@@ -45,12 +50,14 @@ type ReviewResponse = {
   error?: string;
 };
 
-export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
+export function DrillCard({ card, accessToken, onReviewed, practice = false, describeLearning }: DrillCardProps) {
   const { applyAward, me } = useGamification();
   const [shown, setShown] = useState(false);
   const [startedAt, setStartedAt] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState<ReviewRating | null>(null);
   const [result, setResult] = useState<DrillReviewResult | null>(null);
+  const [ratedWith, setRatedWith] = useState<ReviewRating | null>(null);
+  const [learningNote, setLearningNote] = useState<string | null>(null);
   const [award, setAward] = useState<AwardSummary | null>(null);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +70,8 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
     setStartedAt(Date.now());
     setSubmitting(null);
     setResult(null);
+    setRatedWith(null);
+    setLearningNote(null);
     setAward(null);
     setFeedback(null);
     setError(null);
@@ -73,8 +82,16 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
       return;
     }
 
-    setSubmitting(rating);
     setError(null);
+
+    if (practice) {
+      setRatedWith(rating);
+      setLearningNote(describeLearning?.(rating) ?? null);
+      setFeedback(rating === "again" ? "wrong" : "correct");
+      return;
+    }
+
+    setSubmitting(rating);
 
     try {
       const response = await fetch("/api/drill/review", {
@@ -96,6 +113,8 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
       }
 
       setResult(payload.result);
+      setRatedWith(rating);
+      setLearningNote(describeLearning?.(rating) ?? null);
       setFeedback(rating === "again" ? "wrong" : "correct");
       if (payload.award) {
         setAward(payload.award);
@@ -138,7 +157,7 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
               {card.topic}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-ink-900">
-              {card.isNew ? "New card" : "Due review"}
+              {practice ? "Learning" : card.isNew ? "New card" : "Due review"}
             </h2>
           </div>
         </div>
@@ -147,6 +166,8 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
           onClick={() => {
             setShown(false);
             setResult(null);
+            setRatedWith(null);
+            setLearningNote(null);
             setAward(null);
             setFeedback(null);
             setError(null);
@@ -201,7 +222,7 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
               key={item.id}
               type="button"
               onClick={() => void submitReview(item.id)}
-              disabled={Boolean(result) || Boolean(submitting)}
+              disabled={Boolean(ratedWith) || Boolean(submitting)}
               className="focus-ring rounded border border-ink-200 bg-white px-3 py-3 text-left transition hover:border-petrol-500 hover:text-petrol-600"
             >
               <span className="block text-sm font-semibold">{item.label}</span>
@@ -215,7 +236,7 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
 
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
-      {result ? (
+      {ratedWith ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
             {award && award.xpGained > 0 ? (
@@ -235,15 +256,22 @@ export function DrillCard({ card, accessToken, onReviewed }: DrillCardProps) {
                 ) : null}
               </div>
             ) : null}
-            <p className="text-sm text-ink-600">
-              Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
-              <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
-              <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
-            </p>
+            {learningNote ? (
+              <p className="text-sm font-semibold text-petrol-600">{learningNote}</p>
+            ) : null}
+            {result ? (
+              <p className="text-sm text-ink-600">
+                Next review: <span className="font-medium text-ink-900">{result.nextReview}</span>, interval{" "}
+                <span className="font-medium text-ink-900">{result.intervalDays} days</span>, ease{" "}
+                <span className="font-medium text-ink-900">{result.easeFactor.toFixed(2)}</span>.
+              </p>
+            ) : (
+              <p className="text-sm text-ink-500">Practice re-show: your long-term schedule is unchanged.</p>
+            )}
           </div>
           <button
             type="button"
-            onClick={() => void onReviewed({ correct: feedback === "correct", award })}
+            onClick={() => void onReviewed({ correct: feedback === "correct", rating: ratedWith, award })}
             className="focus-ring inline-flex shrink-0 items-center justify-center rounded bg-ink-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-700"
           >
             Next
